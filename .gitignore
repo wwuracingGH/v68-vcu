@@ -1,0 +1,5 @@
+*.elf
+a.elf
+*.o
+.settings/
+.vscode/
