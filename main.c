@@ -1,5 +1,5 @@
 /*
- * Nicole Swierstra, Renee Anderson
+ * Nicole Swierstra, Renee Anderson, Jackson Newman
  * Viking 67 main logic
  *  
  * State machine logic:
@@ -28,6 +28,15 @@
 #include "modules/can.h"
 #include "vendor/printf/printf.h"
 #include "canDefinitions.h"
+
+#include "vendor/FreeRTOS-Kernel/include/FreeRTOS.h"
+#include "vendor/FreeRTOS-Kernel/include/task.h"
+
+#include "vendor/FreeRTOS-Kernel/include/timers.h"
+#include "vendor/FreeRTOS-Kernel/include/queue.h"
+#include "vendor/FreeRTOS-Kernel/include/semphr.h"
+
+
 //_RTOS_IMPLEMENTATION_
 
 #define INPUT_BUTTONID_RTD 0
@@ -86,13 +95,22 @@ const uint8_t   buttonNum     = 1;
                             MC_RFAULT_RESOLVER_DISCONNECTED \
                             )
 
-/* Car State */
-struct {
-    int state_idle;
-    int state_mcinit;
-    int state_rtd;
-    int state_reset;
+static SemaphoreHandle_t state_mutex;
 
+/* Car State */
+typedef enum {
+    VCU_STATE_IDLE = 0,
+    VCU_STATE_RTD,
+    VCU_STATE_MCINIT,
+    VCU_STATE_RESET
+} Vcu_t;
+
+struct {
+    // int state_idle;
+    // int state_mcinit;
+    // int state_rtd;
+    // int state_reset;
+    volatile Vcu_t state;
     volatile uint16_t fault_counter;
     uint16_t plausibility_latch;
     uint16_t last_valid_tr;
@@ -161,10 +179,35 @@ void BUZZEROFF() { GPIOB->ODR &= ~GPIO_ODR_OD10; }
 
 void msgCallback(uint8_t bus, uint32_t id, uint8_t dlc, uint32_t* data);
 void memcpy_32(uint32_t* dest, uint32_t* src, uint32_t byte_size);
-void systick_handler() { /* RTOS_Update(); */ }
+// void systick_handler() { /* RTOS_Update(); */ } FreeRTOS owns systick
+
+void switch_state(Vcu_t next_state) {
+    // needs a semaphore and mutex so no races
+    xSemaphoreTake(state_mutex, portMAX_DELAY);
+    car_state.state = next_state;
+    switch (next_state) {
+        case VCU_STATE_IDLE:
+            Idle_start();
+            break;
+        case VCU_STATE_MCINIT: 
+            MCInit_start();
+            break;
+        case VCU_STATE_RTD:
+            RTD_start();
+            break;
+        case VCU_STATE_RESET:
+            Reset_start();
+            break;
+    }
+    xSemaphoreGive(state_mutex);
+}
+
+
+
 
 // TODO: returns time in miliseconds since chip was first powered on
 uint32_t GetTick() { 
+    // return xTaskGetTickCount(); //possible solution
     return 0; 
 }
 
@@ -187,6 +230,10 @@ MC_ParameterCommand shutup_msg          = { 148, 1, 0, 0b0001110011100111, 0xFFF
 int main(void) {
     clock_init();
     GPIO_init();
+
+    state_mutex = xSemaphoreCreateMutex();
+    configASSERT(state_mutex != NULL);      
+
     //RTOS_init();
     CTRL_ADCinit();
 
@@ -523,3 +570,11 @@ void clock_init() { /* turns up the speed to 250mhz */
     /* sets CAN source as PLL1 Q */
     RCC->CCIPR5 |= 0b01 << RCC_CCIPR5_FDCANSEL_Pos;
 }
+
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
+    (void)xTask;
+    (void)pcTaskName;
+    __asm volatile("cpsid i");
+    for (;;);
+}
+

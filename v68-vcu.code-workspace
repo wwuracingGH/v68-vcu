@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../../../Downloads/team9repo-main"
+		}
+	],
+	"settings": {
+		"stm32cube-ide-clangd.path": "cube"
+	}
+}
