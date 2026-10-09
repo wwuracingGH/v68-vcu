@@ -3,8 +3,18 @@
 #endif
 #include "can.h"
 #include "stm32h5xx.h"
+#include "vendor/FreeRTOS-Kernel/include/queue.h"
+#include "vendor/FreeRTOS-Kernel/include/semphr.h"
+#define CAN_RX_BUFFER_LEN 256 // X
+#define CAN_TX_LOCK_WAIT pdMS_TO_TICKS(2) //?
 
-#define CAN_RX_BUFFER_LEN 256
+/* FreeRTOS */
+static QueueHandle_t rx_queue[CAN_NUM_BUSES];   /* Two Queue Handles */
+static SemaphoreHandle_t tx_mutex[CAN_NUM_BUSES];
+static volatile uint32_t rx_dropped[CAN_NUM_BUSES];
+bool startup = true;
+
+
 CAN_Message_t rx_buffer[CAN_RX_BUFFER_LEN];
 
 /* Index of last CAN message put */
@@ -23,7 +33,26 @@ uint16_t tx_put_head = 0;
 /* Index of where the last message read is */
 uint16_t tx_get_head = 0;
 
+
+
+
+
+
+
+
+
 void CAN_init() {
+    /* RTOS */
+    /* If startup create all RTOS objects*/
+    if (startup) {
+        for (int i = 0; i < CAN_NUM_BUSES; i++) {
+            rx_queue[i] = xQueueCreate(CAN_RX_QUEUE_LEN, sizeof(CAN_Message_t));
+            tx_mutex[i] = xSemaphoreCreateMutex();
+            configASSERT(rx_queue[i] != NULL && tx_mutex[i] != NULL);
+        }
+        startup = false;
+    }
+
     /* Enable FDCAN clock */
     RCC->APB1HENR |= RCC_APB1HENR_FDCANEN;
     __DSB(); /* data sync -> wait for mem update stage in pipeline */
@@ -93,12 +122,20 @@ void CAN_init() {
     FDCAN2->ILS |= FDCAN_ILS_RXFIFO1;
     FDCAN1->ILE |= 3;
     FDCAN2->ILE |= 3;
-    
+
+    /* Set interrupt priorities CAN1>CAN2*/
+    NVIC_SetPriority(FDCAN1_IT0_IRQn, CAN1_IRQ_PRIORITY);
+    NVIC_SetPriority(FDCAN1_IT1_IRQn, CAN1_IRQ_PRIORITY);
+    NVIC_SetPriority(FDCAN2_IT0_IRQn, CAN2_IRQ_PRIORITY);
+    NVIC_SetPriority(FDCAN2_IT1_IRQn, CAN2_IRQ_PRIORITY);
+
+    /* Enable interrupts */
     NVIC_EnableIRQ(FDCAN1_IT0_IRQn);
     NVIC_EnableIRQ(FDCAN1_IT1_IRQn);
     NVIC_EnableIRQ(FDCAN2_IT0_IRQn);
     NVIC_EnableIRQ(FDCAN2_IT1_IRQn);
     
+    /* Enable Operations*/
     FDCAN1->CCCR |= FDCAN_CCCR_FDOE;
     FDCAN2->CCCR |= FDCAN_CCCR_FDOE;
 
@@ -116,6 +153,12 @@ void CAN_init() {
 }
 
 void CAN_reset() {
+    /* Disable interrupts */
+    NVIC_DisableIRQ(FDCAN1_IT0_IRQn);
+    NVIC_DisableIRQ(FDCAN1_IT1_IRQn);
+    NVIC_DisableIRQ(FDCAN2_IT0_IRQn);
+    NVIC_DisableIRQ(FDCAN2_IT1_IRQn);
+
     RCC->APB1HENR &= ~RCC_APB1HENR_FDCANEN;
     __DSB();
     RCC->APB1HRSTR |= RCC_APB1HRSTR_FDCANRST;
@@ -124,30 +167,6 @@ void CAN_reset() {
     __DSB();
 
     CAN_init();
-}
-
-void CAN_sendmessage(FDCAN_GlobalTypeDef* FDCAN, uint16_t id, uint8_t length, uint8_t* data) {
-    /* wait while buffer is full, if it doesn't become unfull, return */
-    int timeout = 1600000;
-    while ((FDCAN->TXFQS & FDCAN_TXFQS_TFQF_Msk) && timeout) timeout--;
-
-    /* first open buffer slot */
-    int j = (FDCAN->TXFQS & FDCAN_TXFQS_TFQPI_Msk) >> FDCAN_TXFQS_TFQPI_Pos;
-
-    /* Find the indexed buffer */
-    FDCAN_SRAM_Typedef * fd_ram = (FDCAN == FDCAN1) ? FDCAN1_RAM : FDCAN2_RAM;
-    FDCAN_Tx_FIFO_Element_Typedef *msg = &fd_ram->tx_buffers[j];
-
-    msg->H0 = 0; /* 11 bit ID goes to T0 */
-    msg->H0 |= ((uint32_t)id << FDCAN_TXBH0_STDID_Pos); /* STDID */
-
-    msg->H1  = 0;
-    msg->H1 |= ((uint32_t)length << FDCAN_TXBH1_DLC_Pos); /* DLC */
-
-    msg->data[0] = *((uint32_t*)data);
-    msg->data[1] = *(((uint32_t*)data) + 1);
-
-    FDCAN->TXBAR |= (1UL << j); /* Trigger message by writing to TX buffer */
 }
 
 void memcpy_32(uint32_t* dest, uint32_t* src, uint32_t l){
@@ -173,12 +192,6 @@ uint8_t _get_dlc(FDCAN_Rx_FIFO_Element_Typedef* msg) {
 
 uint32_t* _get_data(FDCAN_Rx_FIFO_Element_Typedef* msg) {
     return msg->data;
-}
-
-void CAN_recieveMessage(uint32_t id, uint16_t bus, uint16_t len, uint32_t * data) {
-    rx_buffer[rx_put_head] = (CAN_Message_t){id, len, bus, {data[0], data[1]}};
-    rx_put_head++;
-    if (rx_put_head == CAN_RX_BUFFER_LEN) rx_put_head = 0;
 }
 
 void CAN_recieve1RX0() {
@@ -253,3 +266,85 @@ int CAN_DLCFromBytes(int bytes) {
     if (bytes <= 24) return (bytes + 27) >> 2;
     return (bytes + 191) >> 4;
 }
+
+/* FreeRTOS */
+void CAN_sendmessage(FDCAN_GlobalTypeDef* FDCAN, uint16_t id, uint8_t length, uint8_t* data) {
+    SemaphoreHandle_t lock; /* Mutex Selector */
+
+    /* Select which mutex */
+    if (FDCAN == FDCAN1) {
+        SemaphoreHandle_t lock = tx_mutex[CAN1_BUS];
+    } else if (FDCAN ==FDCAN2) {
+        SemaphoreHandle_t lock = tx_mutex[CAN2_BUS];
+    } else {
+        return;
+    }
+
+    /* 
+     * Take one of the mutexs if failed to acquire bail 
+     * xSemaphoreTake outputs a BaseType_t of pdTRUE or pdFALSE
+     * which equates to mutex acquired or failed to acquire mutex
+     */
+    if (xSemaphoreTake(lock, CAN_TX_LOCK_WAIT) != pdTRUE) return;
+    
+    /*
+     * FDCAN->TXFQS & FDCAN_TXFQS_TFQF_Msk:
+     * Tx FIFO/QUEUE Status Reg the mask looks at only the FIFO/QUEUE FULL
+     * bit. Waits for the queue to not be full then exits.
+     * If time out, release mutex and return.
+     */
+    int timeout = 1600000;
+    while ((FDCAN->TXFQS & FDCAN_TXFQS_TFQF_Msk) && timeout) timeout--;
+    if (FDCAN->TXFQS & FDCAN_TXFQS_TFQF_Msk) {
+        xSemaphoreGive(lock);
+        return;
+    }
+    /* first open buffer slot */
+    int j = (FDCAN->TXFQS & FDCAN_TXFQS_TFQPI_Msk) >> FDCAN_TXFQS_TFQPI_Pos;
+
+    /* Find the indexed buffer */
+    FDCAN_SRAM_Typedef * fd_ram = (FDCAN == FDCAN1) ? FDCAN1_RAM : FDCAN2_RAM;
+    FDCAN_Tx_FIFO_Element_Typedef *msg = &fd_ram->tx_buffers[j];
+
+    msg->H0 = 0; /* 11 bit ID goes to T0 */
+    msg->H0 |= ((uint32_t)id << FDCAN_TXBH0_STDID_Pos); /* STDID */
+
+    msg->H1  = 0;
+    msg->H1 |= ((uint32_t)length << FDCAN_TXBH1_DLC_Pos); /* DLC */
+
+    msg->data[0] = *((uint32_t*)data);
+    msg->data[1] = *(((uint32_t*)data) + 1);
+
+    FDCAN->TXBAR |= (1UL << j); /* Trigger message by writing to TX buffer */
+    xSemaphoreGive(lock);   /* Release mutex */
+}
+
+void CAN_recieveMessage(uint32_t id, uint16_t bus, uint16_t len, uint32_t * data) {
+    rx_buffer[rx_put_head] = (CAN_Message_t){id, len, bus, {data[0], data[1]}};
+    rx_put_head++;
+    if (rx_put_head == CAN_RX_BUFFER_LEN) rx_put_head = 0;
+}
+/* Former CAN_sendmessage */
+// void CAN_sendmessage(FDCAN_GlobalTypeDef* FDCAN, uint16_t id, uint8_t length, uint8_t* data) {
+//     /* wait while buffer is full, if it doesn't become unfull, return */
+//     int timeout = 1600000;
+//     while ((FDCAN->TXFQS & FDCAN_TXFQS_TFQF_Msk) && timeout) timeout--;
+
+//     /* first open buffer slot */
+//     int j = (FDCAN->TXFQS & FDCAN_TXFQS_TFQPI_Msk) >> FDCAN_TXFQS_TFQPI_Pos;
+
+//     /* Find the indexed buffer */
+//     FDCAN_SRAM_Typedef * fd_ram = (FDCAN == FDCAN1) ? FDCAN1_RAM : FDCAN2_RAM;
+//     FDCAN_Tx_FIFO_Element_Typedef *msg = &fd_ram->tx_buffers[j];
+
+//     msg->H0 = 0; /* 11 bit ID goes to T0 */
+//     msg->H0 |= ((uint32_t)id << FDCAN_TXBH0_STDID_Pos); /* STDID */
+
+//     msg->H1  = 0;
+//     msg->H1 |= ((uint32_t)length << FDCAN_TXBH1_DLC_Pos); /* DLC */
+
+//     msg->data[0] = *((uint32_t*)data);
+//     msg->data[1] = *(((uint32_t*)data) + 1);
+
+//     FDCAN->TXBAR |= (1UL << j); /* Trigger message by writing to TX buffer */
+// }

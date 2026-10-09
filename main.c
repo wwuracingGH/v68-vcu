@@ -78,7 +78,6 @@ const uint8_t   buttonNum     = 1;
  */
 #define CAN_WATCHDOG_TIME        5000 /* 5000 ms before reset */
 
-
 /*
  * RESETABLE FAULTS
  *
@@ -106,11 +105,12 @@ typedef enum {
 } Vcu_t;
 
 struct {
-    // int state_idle;
+	// Moving to enum
+	// int state_idle;
     // int state_mcinit;
-    // int state_rtd;
+    //int state_rtd;
     // int state_reset;
-    volatile Vcu_t state;
+    volatile Vcu_t state;	// new
     volatile uint16_t fault_counter;
     uint16_t plausibility_latch;
     uint16_t last_valid_tr;
@@ -155,7 +155,7 @@ int MC_faultedR() {
 		;
 }
 
-void Shared_processCAN();
+//void Shared_processCAN();
 void Shared_control();
 void Shared_diagnostics();
 void Shared_CANWatchdog();
@@ -226,13 +226,25 @@ MC_Command          command_msg         = {   0, 0, 1, 0, 0, 0, 0, 0};
 MC_ParameterCommand reset_msg           = {  20, 1, 0, 0, 0};
 MC_ParameterCommand enable_fastm_msg    = { 227, 1, 0, 0xFFFE, 0}; /* TODO: verify */
 MC_ParameterCommand shutup_msg          = { 148, 1, 0, 0b0001110011100111, 0xFFFF};
+/* FreeRTOS DEF */
+
+
+BaseType_t Shared_processCAN(void);
+
 
 int main(void) {
     clock_init();
     GPIO_init();
+    can_mutex = xSemaphoreCreateMutex();
+    /* change stack depth and task handle?*/
+    xTaskCreate(Shared_processCAN,
+    		"Shared_processCAN",
+			1000,
+			0,
+			NULL);
 
-    state_mutex = xSemaphoreCreateMutex();
-    configASSERT(state_mutex != NULL);      
+    //state_mutex = xSemaphoreCreateMutex();
+    //configASSERT(state_mutex != NULL);      
 
     //RTOS_init();
     CTRL_ADCinit();
@@ -421,9 +433,10 @@ void Shared_diagnostics() {
     CAN_sendmessage(DATA_CAN, VCU_CANID_VCU_STATE, 4, (uint8_t*)&st);
 }
 
-void Shared_processCAN() {
+BaseType_t Shared_processCAN() {
     CAN_Message_t * msg;
     uint32_t tick = GetTick();
+    // turn the while loop into a semagpore pend
     while((msg = CAN_getFirstMsg()) != 0) {
         if (msg->bus_id == 0) 
             car_state.last_can_timestamp1 = tick; 
@@ -470,6 +483,7 @@ void Shared_processCAN() {
             break;
         }
     }
+    return pdTRUE;
 }
 
 void Shared_CANWatchdog() {
