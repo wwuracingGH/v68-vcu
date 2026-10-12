@@ -241,6 +241,11 @@ void FLASH_storeVal(int id, int newVal, int write){
 			break;
 		default: break;
 	}
+	/* 
+	 * WTF? TODO how does this even work? 0xFF = bottom 8 bits
+	 * every shift right 8 bits loses bottom bits ie =0000...
+	 * wtf
+	 */
 
 	{
 		int tcurve = id - FLASH_PARAMID_T_CURVE_STRT;
