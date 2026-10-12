@@ -204,9 +204,6 @@ void switch_state(Vcu_t next_state) {
     xSemaphoreGive(state_mutex);
 }
 
-
-
-
 // TODO: returns time in miliseconds since chip was first powered on
 uint32_t GetTick() { 
     // return xTaskGetTickCount(); //possible solution
@@ -335,6 +332,7 @@ void MC_sendCommand() {
     CAN_sendmessage(CTRL_CAN, MC_CANID_COMMAND, 8, (uint8_t*)&command_msg);
 }
 
+/* TODO*/
 void MC_watchdog() {
     if(!MC_WATCHDOG_ENABLED) return;
     if (MC_faulted()) {
@@ -349,6 +347,8 @@ void Idle_start() {
     MC_sendCommand();
 }
 
+
+/*TODO*/
 void Idle_input() {
     // TODO: timestamps
 	GPIO_Update(GetTick());
@@ -372,63 +372,6 @@ void Idle_input() {
     }
 }
 
-/* ======= Reset Specific Functionality ======== */
-void Reset_MC(){
-    CAN_sendmessage(CTRL_CAN, MC_CANID_PARAMCOM, 8, (uint8_t*)&reset_msg);
-}
-
-void Reset_start() {
-    GPIO_setLED(LED_COLOR_RESET);
-    Reset_MC();
-}
-
-void Reset_input() {
-    // TODO: proper timestamps
-	GPIO_Update(GetTick());
-
-    if (!MC_RESET_LOOP) {
-        //RTOS_switchState(car_state.state_idle);
-    }
-
-    int fltr = MC_faultedR();
-    int flt = MC_faulted();
-
-    if (!fltr && flt) {
-       //RTOS_switchState(car_state.state_idle);
-       return;
-    } else if (!flt) {
-    	//RTOS_switchState(car_state.state_mcinit);
-        return;
-    }
-
-    /* if pressed, cancel reset sequence */
-    if (GPIO_buttonReleased(INPUT_BUTTONID_RTD)) {
-        GPIO_buttonConsume(INPUT_BUTTONID_RTD);
-
-        //RTOS_switchState(car_state.state_idle);
-    }
-}
-
-
-/* ======= MC Init Specific Functionality ======= */
-void MCInit_start() {
-    GPIO_setLED(LED_COLOR_WAITING);
-    // disable lockout
-    command_msg.inverterEnable = 0;
-    MC_sendCommand();
-    command_msg.inverterEnable = 1;
-    MC_sendCommand();
-}
-
-void MCInit_loop() {
-    if (car_state.mc_istates.vsmState == 7) {
-        /* RTOS_switchState(car_state.state_idle); */
-    } else if (car_state.mc_istates.vsmState == 6 || !MC_ON_BABYSITTING) {
-        /* RTOS_switchState(car_state.state_rtd); */
-    } else if (car_state.mc_istates.vsmState == 4){
-    	MCInit_start();
-    }
-}
 
 /* ====== Shared functionality ====== */
 void Shared_diagnostics() {
@@ -441,75 +384,6 @@ void Shared_diagnostics() {
 
     CAN_sendmessage(DATA_CAN, VCU_CANID_VCU_STATE, 4, (uint8_t*)&st);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// BaseType_t Shared_processCAN() {
-//     CAN_Message_t * msg;
-//     uint32_t tick = GetTick();
-//     while((msg = CAN_getFirstMsg()) != 0) {
-//         if (msg->bus_id == 0) 
-//             car_state.last_can_timestamp1 = tick; 
-//         if (msg->bus_id == 1)
-//             car_state.last_can_timestamp2 = tick; 
-
-//         switch (msg->id) {
-//         case MC_CANID_HIGHSPEEDMESSAGE:
-//             memcpy_32((uint32_t*)&car_state.mc_hsmsg, msg->data, 2);
-//             car_state.mc_hsmsg_timestamp = tick;
-//             break;
-//         case DL_CANID_ACCEL:
-//             memcpy_32((uint32_t*)&car_state.dl_accel, msg->data, 2);
-//             car_state.dl_accel_timestamp = tick;
-//             break;
-//         case DL_CANID_WHEELSPEED:
-//             memcpy_32((uint32_t*)&car_state.dl_wheelspeed, msg->data, 2);
-//             car_state.dl_wheelspeed_timestamp = tick;
-//             break;
-//         case MC_CANID_FAULTCODES:
-//             memcpy_32((uint32_t*)&car_state.mc_faults, msg->data, 2);
-//             car_state.mc_faults_timestamp = tick;
-//             break;
-//         case MC_CANID_VOLTAGEINFO:
-//             memcpy_32((uint32_t*)&car_state.mc_vinfo, msg->data, 2);
-//             car_state.mc_vinfo_timestamp = tick;
-//             break;
-//         case MC_CANID_INTERNALSTATES:
-//             memcpy_32((uint32_t*)&car_state.mc_istates, msg->data, 2);
-//             car_state.mc_istates_timestamp = tick;
-//             break;
-//         /* TODO: Reprogram/Reveal */
-//         case VCU_CANID_PARAM_CHANGE:
-//         	VCU_ParamSet* ps = (VCU_ParamSet*)msg->data;
-//         	FLASH_storeVal(ps->id, ps->setValue, ps->write);
-//         	apps_mult = CTRL_getADCMultiplers(&car_params->adc_bounds);
-//         	break;
-//         case VCU_CANID_PARAM_REQUEST:
-//         	VCU_ParamReq* rq = (VCU_ParamReq*)msg->data;
-//         	VCU_ParamReveal rv = { FLASH_getVal(rq->id), rq->id };
-//         	CAN_sendmessage(msg->bus_id ? DATA_CAN : CTRL_CAN, VCU_CANID_PARAM_REVEAL, 6, (uint8_t*)&rv);
-//             break;
-//         default:
-//             break;
-//         }
-//     }
-//     return pdTRUE;
-// }
-
 
 void Shared_processCAN(CAN_Message_t* msg) {
     uint32_t tick = GetTick();
@@ -558,6 +432,7 @@ void Shared_processCAN(CAN_Message_t* msg) {
             break;
     }
 }
+
 /*******************************************************************************
  * void CAN_rxTask(void* params)
  * 
@@ -586,20 +461,6 @@ void CAN_rxTask(void* params) {
             Shared_processCAN(&msg);
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 void Shared_CANWatchdog() {
     if (!CAN_WATCHDOG) return;
@@ -663,6 +524,96 @@ void MC_sendStop() {
     command_msg.torqueCommand = ltr;
 }
 
+/* ======= MC Init Specific Functionality ======= */
+void MCInit_start() {
+    GPIO_setLED(LED_COLOR_WAITING);
+    // disable lockout
+    command_msg.inverterEnable = 0;
+    MC_sendCommand();
+    command_msg.inverterEnable = 1;
+    MC_sendCommand();
+}
+
+void MCInit_loop() {
+    if (car_state.mc_istates.vsmState == 7) {
+        /* RTOS_switchState(car_state.state_idle); */
+    } else if (car_state.mc_istates.vsmState == 6 || !MC_ON_BABYSITTING) {
+        /* RTOS_switchState(car_state.state_rtd); */
+    } else if (car_state.mc_istates.vsmState == 4){
+    	MCInit_start();
+    }
+}
+
+
+/* ======= Reset Specific Functionality ======== */
+void Reset_MC(){
+    CAN_sendmessage(CTRL_CAN, MC_CANID_PARAMCOM, 8, (uint8_t*)&reset_msg);
+}
+
+void Reset_start() {
+    GPIO_setLED(LED_COLOR_RESET);
+    Reset_MC();
+}
+
+void Reset_input() {
+    // TODO: proper timestamps
+	GPIO_Update(GetTick());
+
+    if (!MC_RESET_LOOP) {
+        //RTOS_switchState(car_state.state_idle);
+    }
+
+    int fltr = MC_faultedR();
+    int flt = MC_faulted();
+
+    if (!fltr && flt) {
+       //RTOS_switchState(car_state.state_idle);
+       return;
+    } else if (!flt) {
+    	//RTOS_switchState(car_state.state_mcinit);
+        return;
+    }
+
+    /* if pressed, cancel reset sequence */
+    if (GPIO_buttonReleased(INPUT_BUTTONID_RTD)) {
+        GPIO_buttonConsume(INPUT_BUTTONID_RTD);
+
+        //RTOS_switchState(car_state.state_idle);
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /* ======= Various util functions ======= */
 void clock_init() { /* turns up the speed to 250mhz */
     /* use voltage scaling profile 0 */
@@ -706,4 +657,57 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
     __asm volatile("cpsid i");
     for (;;);
 }
+
+
+// void Shared_processCAN() {
+//     CAN_Message_t * msg;
+//     uint32_t tick = GetTick();
+//     while((msg = CAN_getFirstMsg()) != 0) {
+//         if (msg->bus_id == 0) 
+//             car_state.last_can_timestamp1 = tick; 
+//         if (msg->bus_id == 1)
+//             car_state.last_can_timestamp2 = tick; 
+
+//         switch (msg->id) {
+//         case MC_CANID_HIGHSPEEDMESSAGE:
+//             memcpy_32((uint32_t*)&car_state.mc_hsmsg, msg->data, 2);
+//             car_state.mc_hsmsg_timestamp = tick;
+//             break;
+//         case DL_CANID_ACCEL:
+//             memcpy_32((uint32_t*)&car_state.dl_accel, msg->data, 2);
+//             car_state.dl_accel_timestamp = tick;
+//             break;
+//         case DL_CANID_WHEELSPEED:
+//             memcpy_32((uint32_t*)&car_state.dl_wheelspeed, msg->data, 2);
+//             car_state.dl_wheelspeed_timestamp = tick;
+//             break;
+//         case MC_CANID_FAULTCODES:
+//             memcpy_32((uint32_t*)&car_state.mc_faults, msg->data, 2);
+//             car_state.mc_faults_timestamp = tick;
+//             break;
+//         case MC_CANID_VOLTAGEINFO:
+//             memcpy_32((uint32_t*)&car_state.mc_vinfo, msg->data, 2);
+//             car_state.mc_vinfo_timestamp = tick;
+//             break;
+//         case MC_CANID_INTERNALSTATES:
+//             memcpy_32((uint32_t*)&car_state.mc_istates, msg->data, 2);
+//             car_state.mc_istates_timestamp = tick;
+//             break;
+//         /* TODO: Reprogram/Reveal */
+//         case VCU_CANID_PARAM_CHANGE:
+//         	VCU_ParamSet* ps = (VCU_ParamSet*)msg->data;
+//         	FLASH_storeVal(ps->id, ps->setValue, ps->write);
+//         	apps_mult = CTRL_getADCMultiplers(&car_params->adc_bounds);
+//         	break;
+//         case VCU_CANID_PARAM_REQUEST:
+//         	VCU_ParamReq* rq = (VCU_ParamReq*)msg->data;
+//         	VCU_ParamReveal rv = { FLASH_getVal(rq->id), rq->id };
+//         	CAN_sendmessage(msg->bus_id ? DATA_CAN : CTRL_CAN, VCU_CANID_PARAM_REVEAL, 6, (uint8_t*)&rv);
+//             break;
+//         default:
+//             break;
+//         }
+//     }
+//     return pdTRUE;
+// }
 
