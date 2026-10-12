@@ -30,10 +30,10 @@ void mem_manage(void) {default_handler();}
 void bus_fault(void) {default_handler();}
 void usage_fault(void) {default_handler();}
 void secure_fault(void) {default_handler();}
-void svcall_handler(void) {default_handler();}
+//void svcall_handler(void) {default_handler();}
 void dbg_monitor_handler(void) {default_handler();}
-void pendsv_handler(void) {default_handler();}
-void systick_handler(void) __attribute__((weak, alias("default_handler")));
+//void pendsv_handler(void) {default_handler();}
+//void systick_handler(void) __attribute__((weak, alias("default_handler")));
 
 /* STM32H533 Interrupts */
 void wwdg_handler(void) __attribute__((weak, alias("default_handler")));
@@ -143,6 +143,10 @@ extern void fdcan1_it0_handler();
 extern void fdcan1_it1_handler();
 extern void fdcan2_it0_handler();
 extern void fdcan2_it1_handler();
+/* FreeRTOS */
+extern void SVC_Handler(void);
+extern void PendSV_Handler(void);
+extern void SysTick_Handler(void);
 
 uint32_t isr_vector[ISR_VECTOR_SIZE_WORDS] __attribute__((section(".isr_vector"))) = {
     STACK_POINTER_INIT_ADDRESS,         /* 0x00 */
@@ -157,11 +161,11 @@ uint32_t isr_vector[ISR_VECTOR_SIZE_WORDS] __attribute__((section(".isr_vector")
     0,                                  /* 0x20 */
     0,                                  /* 0x24 */
     0,                                  /* 0x28 */
-    (uint32_t)&svcall_handler,          /* 0x2C */
+    (uint32_t)&SVC_Handler,          /* 0x2C */
     (uint32_t)&dbg_monitor_handler,     /* 0x30 */
     0,                                  /* 0x34 */
-    (uint32_t)&pendsv_handler,          /* 0x38 */
-    (uint32_t)&systick_handler,         /* 0x3C */
+    (uint32_t)&PendSV_Handler,          /* 0x38 */
+    (uint32_t)&SysTick_Handler,         /* 0x3C */
     /* STM32H533 interrupt handlers */
     (uint32_t)&wwdg_handler,            /* 0x40 */
     (uint32_t)&pvd_handler,             /* 0x44 */

@@ -15,6 +15,7 @@
  */
 
 #include <stdint.h>
+#include <stdbool.h>
 #ifndef STM32H533xx
 #define STM32H533xx
 #endif
@@ -35,6 +36,7 @@
 #include "vendor/FreeRTOS-Kernel/include/timers.h"
 #include "vendor/FreeRTOS-Kernel/include/queue.h"
 #include "vendor/FreeRTOS-Kernel/include/semphr.h"
+
 
 
 //_RTOS_IMPLEMENTATION_
@@ -208,7 +210,7 @@ void switch_state(Vcu_t next_state) {
 // TODO: returns time in miliseconds since chip was first powered on
 uint32_t GetTick() { 
     // return xTaskGetTickCount(); //possible solution
-    return 0; 
+    return xTaskGetTickCount(); 
 }
 
 const int control_period        =   1;
@@ -227,24 +229,30 @@ MC_ParameterCommand reset_msg           = {  20, 1, 0, 0, 0};
 MC_ParameterCommand enable_fastm_msg    = { 227, 1, 0, 0xFFFE, 0}; /* TODO: verify */
 MC_ParameterCommand shutup_msg          = { 148, 1, 0, 0b0001110011100111, 0xFFFF};
 /* FreeRTOS DEF */
+#define CAN_RX_TASK_STACK 512
+#define CAN1_RX_TASK_PRIORITY 3     /* Torque etc...*/
+#define CAN2_RX_TASK_PRIORITY 2     /* Logging */
 
-
-BaseType_t Shared_processCAN(void);
-
+void CAN_rxTask(void* params);
+void Shared_processCAN(CAN_Message_t* msg);
 
 int main(void) {
     clock_init();
-    GPIO_init();
-    can_mutex = xSemaphoreCreateMutex();
-    /* change stack depth and task handle?*/
-    xTaskCreate(Shared_processCAN,
-    		"Shared_processCAN",
-			1000,
-			0,
-			NULL);
+    GPIO_init(); 
 
-    //state_mutex = xSemaphoreCreateMutex();
-    //configASSERT(state_mutex != NULL);      
+    
+
+    xTaskCreate(CAN_rxTask,
+                "can1_rx",
+                CAN_RX_TASK_STACK,
+                (void*)CAN1_BUS,
+                CAN1_RX_TASK_PRIORITY,
+                NULL);
+    xTaskCreate(CAN_rxTask, "can2_rx",
+                CAN_RX_TASK_STACK,
+                (void*)CAN2_BUS,
+                CAN2_RX_TASK_PRIORITY,
+                NULL);
 
     //RTOS_init();
     CTRL_ADCinit();
@@ -288,13 +296,14 @@ int main(void) {
 
     car_params = FLASH_getVals();
     apps_mult = CTRL_getADCMultiplers(&car_params->adc_bounds);
-
     CAN_init();
+    
 
     LOG("Hello World!\n");
     LOGLN("CLOCK CHECK: %d", SysTick->LOAD + 1);
 
     //RTOS_start_armeabi(SYS_CLOCK);
+    vTaskStartScheduler();
     for (;;) {
     	//RTOS_ExecuteTasks();
     }
@@ -433,17 +442,83 @@ void Shared_diagnostics() {
     CAN_sendmessage(DATA_CAN, VCU_CANID_VCU_STATE, 4, (uint8_t*)&st);
 }
 
-BaseType_t Shared_processCAN() {
-    CAN_Message_t * msg;
-    uint32_t tick = GetTick();
-    // turn the while loop into a semagpore pend
-    while((msg = CAN_getFirstMsg()) != 0) {
-        if (msg->bus_id == 0) 
-            car_state.last_can_timestamp1 = tick; 
-        if (msg->bus_id == 1)
-            car_state.last_can_timestamp2 = tick; 
 
-        switch (msg->id) {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// BaseType_t Shared_processCAN() {
+//     CAN_Message_t * msg;
+//     uint32_t tick = GetTick();
+//     while((msg = CAN_getFirstMsg()) != 0) {
+//         if (msg->bus_id == 0) 
+//             car_state.last_can_timestamp1 = tick; 
+//         if (msg->bus_id == 1)
+//             car_state.last_can_timestamp2 = tick; 
+
+//         switch (msg->id) {
+//         case MC_CANID_HIGHSPEEDMESSAGE:
+//             memcpy_32((uint32_t*)&car_state.mc_hsmsg, msg->data, 2);
+//             car_state.mc_hsmsg_timestamp = tick;
+//             break;
+//         case DL_CANID_ACCEL:
+//             memcpy_32((uint32_t*)&car_state.dl_accel, msg->data, 2);
+//             car_state.dl_accel_timestamp = tick;
+//             break;
+//         case DL_CANID_WHEELSPEED:
+//             memcpy_32((uint32_t*)&car_state.dl_wheelspeed, msg->data, 2);
+//             car_state.dl_wheelspeed_timestamp = tick;
+//             break;
+//         case MC_CANID_FAULTCODES:
+//             memcpy_32((uint32_t*)&car_state.mc_faults, msg->data, 2);
+//             car_state.mc_faults_timestamp = tick;
+//             break;
+//         case MC_CANID_VOLTAGEINFO:
+//             memcpy_32((uint32_t*)&car_state.mc_vinfo, msg->data, 2);
+//             car_state.mc_vinfo_timestamp = tick;
+//             break;
+//         case MC_CANID_INTERNALSTATES:
+//             memcpy_32((uint32_t*)&car_state.mc_istates, msg->data, 2);
+//             car_state.mc_istates_timestamp = tick;
+//             break;
+//         /* TODO: Reprogram/Reveal */
+//         case VCU_CANID_PARAM_CHANGE:
+//         	VCU_ParamSet* ps = (VCU_ParamSet*)msg->data;
+//         	FLASH_storeVal(ps->id, ps->setValue, ps->write);
+//         	apps_mult = CTRL_getADCMultiplers(&car_params->adc_bounds);
+//         	break;
+//         case VCU_CANID_PARAM_REQUEST:
+//         	VCU_ParamReq* rq = (VCU_ParamReq*)msg->data;
+//         	VCU_ParamReveal rv = { FLASH_getVal(rq->id), rq->id };
+//         	CAN_sendmessage(msg->bus_id ? DATA_CAN : CTRL_CAN, VCU_CANID_PARAM_REVEAL, 6, (uint8_t*)&rv);
+//             break;
+//         default:
+//             break;
+//         }
+//     }
+//     return pdTRUE;
+// }
+
+
+void Shared_processCAN(CAN_Message_t* msg) {
+    uint32_t tick = GetTick();
+    if (msg->bus_id == CAN1_BUS) 
+        car_state.last_can_timestamp1 = tick; 
+    if (msg->bus_id == CAN2_BUS)
+        car_state.last_can_timestamp2 = tick; 
+
+    switch (msg->id) {
         case MC_CANID_HIGHSPEEDMESSAGE:
             memcpy_32((uint32_t*)&car_state.mc_hsmsg, msg->data, 2);
             car_state.mc_hsmsg_timestamp = tick;
@@ -481,10 +556,50 @@ BaseType_t Shared_processCAN() {
             break;
         default:
             break;
-        }
     }
-    return pdTRUE;
 }
+/*******************************************************************************
+ * void CAN_rxTask(void* params)
+ * 
+ * params given at initialization (see main.c). Basically two tasks, one for each
+ * CAN peripheral (two), CAN1 (can1_rx) is higher prio so if CAN2 is writing or
+ * logging and CAN2's Queue has messages CAN1 will empty its messages first.
+ * Loops stops when CAN_getMessage()'s xQueueReceive(rx_queue[bus], msg, wait)
+ * notices queue is empty and sleeps letting other tasks run.
+ * unblocks when additional messages come into the queue. When a message arrives
+ * in the FIFO an interrupt fires and takes over the CPU (interrupted tasks TCB
+ * gets sent to the stack). ISR functions requests xQueueSendFromISR() to write
+ * the message to the queue, at the same time it compares the blocked task's
+ * priority to the interrupted, regardless it places the blocked task CAN_rxTask
+ * onto the READY list according to its priority. xQueueSendFromISR() changes
+ * xHigherPriorityTaskWoken if the blocked task (CAN_rxTask) has higher priority
+ * than the interrupted task. portYIELD_FROM_ISR(xHigherPriorityTaskWoken) will
+ * activate the task switch/preemption if true. At that point instead of returning
+ * to the lower priority task it just runs CAN_rxTask instead.
+ *******************************************************************************/
+void CAN_rxTask(void* params) {
+    CAN_Bus_t bus = (CAN_Bus_t)(uint32_t)params;
+    CAN_Message_t msg;
+
+    for (;;) {
+        if (CAN_getMessage(bus, &msg, portMAX_DELAY))
+            Shared_processCAN(&msg);
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 void Shared_CANWatchdog() {
     if (!CAN_WATCHDOG) return;

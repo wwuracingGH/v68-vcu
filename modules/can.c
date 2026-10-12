@@ -1,3 +1,7 @@
+/*******************************************************************************
+ *
+ *******************************************************************************/
+
 #ifndef STM32H533xx
 #define STM32H533xx
 #endif
@@ -5,6 +9,7 @@
 #include "stm32h5xx.h"
 #include "vendor/FreeRTOS-Kernel/include/queue.h"
 #include "vendor/FreeRTOS-Kernel/include/semphr.h"
+#include <stdbool.h>
 #define CAN_RX_BUFFER_LEN 256 // X
 #define CAN_TX_LOCK_WAIT pdMS_TO_TICKS(2) //?
 
@@ -12,7 +17,7 @@
 static QueueHandle_t rx_queue[CAN_NUM_BUSES];   /* Two Queue Handles */
 static SemaphoreHandle_t tx_mutex[CAN_NUM_BUSES];
 static volatile uint32_t rx_dropped[CAN_NUM_BUSES];
-bool startup = true;
+static bool startup = true;
 
 
 CAN_Message_t rx_buffer[CAN_RX_BUFFER_LEN];
@@ -32,14 +37,6 @@ CAN_Message_t tx_buffer[CAN_TX_BUFFER_LEN];
 uint16_t tx_put_head = 0;
 /* Index of where the last message read is */
 uint16_t tx_get_head = 0;
-
-
-
-
-
-
-
-
 
 void CAN_init() {
     /* RTOS */
@@ -194,67 +191,10 @@ uint32_t* _get_data(FDCAN_Rx_FIFO_Element_Typedef* msg) {
     return msg->data;
 }
 
-void CAN_recieve1RX0() {
-    uint32_t fifo_get_idx = (FDCAN1->RXF0S & FDCAN_RXF0S_F0GI_Msk) >> FDCAN_RXF0S_F0GI_Pos;
-    FDCAN_Rx_FIFO_Element_Typedef* msg = FDCAN1_RAM->rx_fifo0 + fifo_get_idx;
-    CAN_recieveMessage(_get_id(msg), 0, CAN_bytesFromDLC(_get_dlc(msg)), _get_data(msg));
-    FDCAN1->RXF0A = fifo_get_idx;
-}
-
-void CAN_recieve1RX1() {
-    uint32_t fifo_get_idx = (FDCAN1->RXF1S & FDCAN_RXF1S_F1GI_Msk) >> FDCAN_RXF1S_F1GI_Pos;
-    FDCAN_Rx_FIFO_Element_Typedef* msg = FDCAN1_RAM->rx_fifo1 + fifo_get_idx;
-    CAN_recieveMessage(_get_id(msg), 0, CAN_bytesFromDLC(_get_dlc(msg)), _get_data(msg));
-    FDCAN1->RXF1A = fifo_get_idx;
-}
-
-void CAN_recieve2RX0() {
-    uint32_t fifo_get_idx = (FDCAN2->RXF0S & FDCAN_RXF0S_F0GI_Msk) >> FDCAN_RXF0S_F0GI_Pos;
-    FDCAN_Rx_FIFO_Element_Typedef* msg = FDCAN2_RAM->rx_fifo0 + fifo_get_idx;
-    CAN_recieveMessage(_get_id(msg), 1, CAN_bytesFromDLC(_get_dlc(msg)), _get_data(msg));
-    FDCAN2->RXF0A = fifo_get_idx;
-}
-
-void CAN_recieve2RX1() {
-    uint32_t fifo_get_idx = (FDCAN2->RXF1S & FDCAN_RXF1S_F1GI_Msk) >> FDCAN_RXF1S_F1GI_Pos;
-    FDCAN_Rx_FIFO_Element_Typedef* msg = FDCAN2_RAM->rx_fifo1 + fifo_get_idx;
-    CAN_recieveMessage(_get_id(msg), 1, CAN_bytesFromDLC(_get_dlc(msg)), _get_data(msg));
-    FDCAN2->RXF1A = fifo_get_idx;
-}
-
-void fdcan1_it0_handler() {
-    CAN_recieve1RX0();
-    FDCAN1->IR |= FDCAN_IR_RF0N;
-}
-
-void fdcan1_it1_handler() {
-    CAN_recieve1RX1();
-    FDCAN1->IR |= FDCAN_IR_RF1N;
-}
-
-void fdcan2_it0_handler() {
-    CAN_recieve2RX0();
-    FDCAN2->IR |= FDCAN_IR_RF0N;
-}
-
-void fdcan2_it1_handler() {
-    CAN_recieve2RX1();
-    FDCAN2->IR |= FDCAN_IR_RF1N;
-}
-
 int CAN_rxCount() {
     int l = rx_put_head - rx_get_head;
     if (l < 0) l += CAN_RX_BUFFER_LEN;
     return l;
-}
-
-CAN_Message_t* CAN_getFirstMsg() {
-	if(rx_get_head == rx_put_head) return 0;
-    uint32_t old = rx_get_head;
-    rx_get_head++;
-    if (rx_get_head >= CAN_RX_BUFFER_LEN) rx_get_head = 0;
-
-    return rx_buffer + old;
 }
 
 int CAN_bytesFromDLC(int dlc) {
@@ -273,9 +213,9 @@ void CAN_sendmessage(FDCAN_GlobalTypeDef* FDCAN, uint16_t id, uint8_t length, ui
 
     /* Select which mutex */
     if (FDCAN == FDCAN1) {
-        SemaphoreHandle_t lock = tx_mutex[CAN1_BUS];
+        lock = tx_mutex[CAN1_BUS];
     } else if (FDCAN ==FDCAN2) {
-        SemaphoreHandle_t lock = tx_mutex[CAN2_BUS];
+        lock = tx_mutex[CAN2_BUS];
     } else {
         return;
     }
@@ -319,11 +259,112 @@ void CAN_sendmessage(FDCAN_GlobalTypeDef* FDCAN, uint16_t id, uint8_t length, ui
     xSemaphoreGive(lock);   /* Release mutex */
 }
 
-void CAN_recieveMessage(uint32_t id, uint16_t bus, uint16_t len, uint32_t * data) {
-    rx_buffer[rx_put_head] = (CAN_Message_t){id, len, bus, {data[0], data[1]}};
-    rx_put_head++;
-    if (rx_put_head == CAN_RX_BUFFER_LEN) rx_put_head = 0;
+static void CAN_receiveMessage(uint32_t id, uint16_t bus,uint16_t len, uint32_t* data, BaseType_t* xHigherPriorityTaskWoken) {
+    /* Create a CAN message */
+    CAN_Message_t msg = {id, len, bus, {data[0], data[1]}};
+
+    /* 
+     * Sends the message to its respective queue, sets xHigher... to true if
+     * the taks it interrupted had lower priority and returns if it succeeded or 
+     *
+     * 
+     */
+    if (xQueueSendFromISR(rx_queue[bus], &msg, xHigherPriorityTaskWoken) != pdTRUE) rx_dropped[bus]++;
 }
+
+/*******************************************************************************
+ * fdcanX_itY_handler()
+ * 
+ * Activates when the FIFO interrupt triggers. Sends it to CAN_FIFO_Process...
+ * 
+ *******************************************************************************/
+static void CAN_FIFO_Process(FDCAN_GlobalTypeDef* FDCAN, CAN_Bus_t bus, int fifo, BaseType_t* xHigherPriorityTaskWoken) {
+    /*
+     * Find where the bus's recieved frames are stored. Each CAN peripheral has
+     * its own block of message in RAM, (ID, Len, data), Bus 0 = CAN1, Bus
+     * 1 = CAN2, Additionally there are two FIFO blocks (0 and 1) that represent 
+     * the two mail boxes for each CAN bus. We must know the bus and which FIFO block.
+     */
+    FDCAN_SRAM_Typedef* fd_ram = (bus == CAN1_BUS) ? FDCAN1_RAM : FDCAN2_RAM;
+
+    /*
+     * Select the status register of FDCAN RX FIFO x.
+     * Bits [3:0] fill level or number of elements stored
+     * Bits [9:8] index pointer of oldest frame to read
+     * Bits [16-17] index to next frame to fill/ write
+     */
+    volatile uint32_t* status = fifo ? &FDCAN->RXF1S : &FDCAN->RXF0S;
+    volatile uint32_t* ack    = fifo ? &FDCAN->RXF1A : &FDCAN->RXF0A;
+    FDCAN_Rx_FIFO_Element_Typedef* elements = fifo ? fd_ram->rx_fifo1 : fd_ram->rx_fifo0;
+
+    /* RXF0S and RXF1S share a layout, so the FIFO0 masks work for both */
+    while (*status & FDCAN_RXF0S_F0FL_Msk) {
+        uint32_t idx = (*status & FDCAN_RXF0S_F0GI_Msk) >> FDCAN_RXF0S_F0GI_Pos;
+        FDCAN_Rx_FIFO_Element_Typedef* msg = elements + idx;
+        CAN_receiveMessage(_get_id(msg), bus, CAN_bytesFromDLC(_get_dlc(msg)), _get_data(msg), xHigherPriorityTaskWoken);
+        *ack = idx;
+    }
+
+}
+
+/*******************************************************************************
+ * fdcanX_itY_handler()
+ * 
+ * Activates when the FIFO interrupt triggers. Sends it to CAN_FIFO_Process...
+ * 
+ *******************************************************************************/
+void fdcan1_it0_handler() {
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    FDCAN1->IR = FDCAN_IR_RF0N;    /* Clear new message */
+    CAN_FIFO_Process(FDCAN1, CAN1_BUS, 0, &xHigherPriorityTaskWoken);
+    /* If the CAN_rxTask has higher PRIO than what it interrupted, switch*/
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+void fdcan1_it1_handler() {
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    FDCAN1->IR = FDCAN_IR_RF1N;    /* Clear new message */
+    CAN_FIFO_Process(FDCAN1, CAN1_BUS, 1, &xHigherPriorityTaskWoken);
+    /* xHigherPriorityTaskWoken = pdFALSE then no context switch
+     * xHigherPriorityTaskWoken = pdTRUE switch context
+     * Example:
+     *      Logger task running (low PRIO), then the CAN task fires
+     *
+     */
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+void fdcan2_it0_handler() {
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    FDCAN2->IR = FDCAN_IR_RF0N;    /* Clear new message */
+    CAN_FIFO_Process(FDCAN2, CAN2_BUS, 0, &xHigherPriorityTaskWoken);
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+void fdcan2_it1_handler() {
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    FDCAN2->IR = FDCAN_IR_RF1N;    /* Clear new message */
+    CAN_FIFO_Process(FDCAN2, CAN2_BUS,1, &xHigherPriorityTaskWoken);
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+bool CAN_getMessage(uint16_t bus, CAN_Message_t* msg, TickType_t wait) {
+    return xQueueReceive(rx_queue[bus], msg, wait) == pdTRUE;
+}
+
+uint32_t CAN_rxDropped(uint16_t bus) {
+    return rx_dropped[bus];
+}
+
+
+
+/* CAN_receiveMessage */
+// void CAN_recieveMessage(uint32_t id, uint16_t bus, uint16_t len, uint32_t * data) {
+//     rx_buffer[rx_put_head] = (CAN_Message_t){id, len, bus, {data[0], data[1]}};
+//     rx_put_head++;
+//     if (rx_put_head == CAN_RX_BUFFER_LEN) rx_put_head = 0;
+// }
+
 /* Former CAN_sendmessage */
 // void CAN_sendmessage(FDCAN_GlobalTypeDef* FDCAN, uint16_t id, uint8_t length, uint8_t* data) {
 //     /* wait while buffer is full, if it doesn't become unfull, return */
@@ -348,3 +389,65 @@ void CAN_recieveMessage(uint32_t id, uint16_t bus, uint16_t len, uint32_t * data
 
 //     FDCAN->TXBAR |= (1UL << j); /* Trigger message by writing to TX buffer */
 // }
+
+/* Old recieve */
+// void CAN_recieve1RX0() {
+//     uint32_t fifo_get_idx = (FDCAN1->RXF0S & FDCAN_RXF0S_F0GI_Msk) >> FDCAN_RXF0S_F0GI_Pos;
+//     FDCAN_Rx_FIFO_Element_Typedef* msg = FDCAN1_RAM->rx_fifo0 + fifo_get_idx;
+//     CAN_recieveMessage(_get_id(msg), 0, CAN_bytesFromDLC(_get_dlc(msg)), _get_data(msg));
+//     FDCAN1->RXF0A = fifo_get_idx;
+// }
+
+// void CAN_recieve1RX1() {
+//     uint32_t fifo_get_idx = (FDCAN1->RXF1S & FDCAN_RXF1S_F1GI_Msk) >> FDCAN_RXF1S_F1GI_Pos;
+//     FDCAN_Rx_FIFO_Element_Typedef* msg = FDCAN1_RAM->rx_fifo1 + fifo_get_idx;
+//     CAN_recieveMessage(_get_id(msg), 0, CAN_bytesFromDLC(_get_dlc(msg)), _get_data(msg));
+//     FDCAN1->RXF1A = fifo_get_idx;
+// }
+
+// void CAN_recieve2RX0() {
+//     uint32_t fifo_get_idx = (FDCAN2->RXF0S & FDCAN_RXF0S_F0GI_Msk) >> FDCAN_RXF0S_F0GI_Pos;
+//     FDCAN_Rx_FIFO_Element_Typedef* msg = FDCAN2_RAM->rx_fifo0 + fifo_get_idx;
+//     CAN_recieveMessage(_get_id(msg), 1, CAN_bytesFromDLC(_get_dlc(msg)), _get_data(msg));
+//     FDCAN2->RXF0A = fifo_get_idx;
+// }
+
+// void CAN_recieve2RX1() {
+//     uint32_t fifo_get_idx = (FDCAN2->RXF1S & FDCAN_RXF1S_F1GI_Msk) >> FDCAN_RXF1S_F1GI_Pos;
+//     FDCAN_Rx_FIFO_Element_Typedef* msg = FDCAN2_RAM->rx_fifo1 + fifo_get_idx;
+//     CAN_recieveMessage(_get_id(msg), 1, CAN_bytesFromDLC(_get_dlc(msg)), _get_data(msg));
+//     FDCAN2->RXF1A = fifo_get_idx;
+// }
+
+// CAN_Message_t* CAN_getFirstMsg() {
+// 	if(rx_get_head == rx_put_head) return 0;
+//     uint32_t old = rx_get_head;
+//     rx_get_head++;
+//     if (rx_get_head >= CAN_RX_BUFFER_LEN) rx_get_head = 0;
+
+//     return rx_buffer + old;
+// }
+
+
+
+/* Old interrupt handlers */
+// void fdcan1_it0_handler() {
+//     CAN_recieve1RX0();
+//     FDCAN1->IR |= FDCAN_IR_RF0N;
+// }
+
+// void fdcan1_it1_handler() {
+//     CAN_recieve1RX1();
+//     FDCAN1->IR |= FDCAN_IR_RF1N;
+// }
+
+// void fdcan2_it0_handler() {
+//     CAN_recieve2RX0();
+//     FDCAN2->IR |= FDCAN_IR_RF0N;
+// }
+
+// void fdcan2_it1_handler() {
+//     CAN_recieve2RX1();
+//     FDCAN2->IR |= FDCAN_IR_RF1N;
+// }
+
