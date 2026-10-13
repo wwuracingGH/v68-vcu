@@ -229,10 +229,9 @@ MC_ParameterCommand shutup_msg          = { 148, 1, 0, 0b0001110011100111, 0xFFF
 #define DIAGNOSTIC_TASK_STACK   512
 #define INPUT_TASK_STACK        512
 
-
-#define CAN1_RX_TASK_PRIORITY 3     /* Torque etc...*/
-#define CAN2_RX_TASK_PRIORITY 2     /* Logging */
 #define CONTROL_TASK_PRIORITY 4
+#define CAN1_RX_TASK_PRIORITY 3
+#define CAN2_RX_TASK_PRIORITY 2
 #define SLOW_TASK_PRIORITY    1 
 
 void CAN_rxTask(void* params);
@@ -266,11 +265,6 @@ void Shared_processCAN(CAN_Message_t* msg);
  * 
  * 
  */
-
-
-
-
-
 int main(void) {
     clock_init();
     GPIO_init(); 
@@ -292,6 +286,12 @@ int main(void) {
                 NULL,
                 CONTROL_TASK_PRIORITY,
                 NULL);
+    xTaskCreate(Input_Task, "input_task",
+    			INPUT_TASK_STACK,
+				NULL,
+				SLOW_TASK_PRIORITY,
+				NULL);
+
     //xTaskCreate();
     state_mutex = xSemaphoreCreateMutex();
     
@@ -528,6 +528,7 @@ void CAN_rxTask(void* params) {
  * MCInit_loop
  *******************************************************************************/
 void Control_Task(void* params) {
+	(void)params;
     TickType_t last_wake = xTaskGetTickCount();
     /* Looking at state diagram we start in IDLE*/
     uint32_t n = 0;
@@ -561,11 +562,12 @@ void Control_Task(void* params) {
  * 
  *******************************************************************************/
 void Diagnostic_Task(void* params) {
+	(void)params;
     TickType_t last_wake = xTaskGetTickCount();
     for (;;) {
         Shared_diagnostics();
         _update_logging();
-        vvTaskDelayuntil(&last_wake, pdMS_TO_TICKS(diagnostics_period));
+        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(diagnostics_period));
     }
 }
 
@@ -581,6 +583,7 @@ void Diagnostic_Task(void* params) {
  * 
  *******************************************************************************/
 void Input_Task(void* params) {
+	(void)params;
     TickType_t last_wake = xTaskGetTickCount();
     uint32_t n = 0;
     for (;;) {
