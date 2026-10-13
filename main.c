@@ -13,7 +13,6 @@
  * Ready to Drive is the state where the motor controller is energized and initialized
  * 
  */
-
 #include <stdint.h>
 #include <stdbool.h>
 #ifndef STM32H533xx
@@ -531,11 +530,29 @@ void CAN_rxTask(void* params) {
 void Control_Task(void* params) {
     TickType_t last_wake = xTaskGetTickCount();
     /* Looking at state diagram we start in IDLE*/
+    uint32_t n = 0;
     switch_state(VCU_STATE_IDLE);
+    for (;;) {
+        Vcu_t state = car_state.state;
 
+        if (state == VCU_STATE_IDLE || state == VCU_STATE_RTD)
+            Shared_control();
+        if (n % mc_command_period == 0) {
+            if (state == VCU_STATE_RTD) 
+                MC_sendCommand();
+            else                        
+                MC_sendStop();
+            if (state == VCU_STATE_MCINIT) 
+                MCInit_loop();
+        }
+        n++;
+        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(control_period));
+    }
+    /*
     for (;;) {
         vTaskDelayuntil(&last_wake, pdMS_TO_TICKS(control_period));
     }
+    */
 }
 
 /*******************************************************************************
@@ -565,10 +582,28 @@ void Diagnostic_Task(void* params) {
  *******************************************************************************/
 void Input_Task(void* params) {
     TickType_t last_wake = xTaskGetTickCount();
-    
+    uint32_t n = 0;
     for (;;) {
-        vvTaskDelayuntil(&last_wake, pdMS_TO_TICKS(diagnostics_period));
-
+        switch (car_state.state) {
+            case VCU_STATE_IDLE:  
+                Idle_input(); 
+                break;
+            case VCU_STATE_RTD:   
+                RTD_input();  
+                break;
+            case VCU_STATE_RESET: 
+                Reset_MC(); 
+                Reset_input(); 
+                break;
+            default: break;
+        }
+        // if (n % 2 == 0) {                   /* 100 ms */
+        //     if (car_state.state == VCU_STATE_RTD) 
+        //          MC_watchdog();
+        //          Shared_CANWatchdog();
+        // }
+        n++;
+        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(input_period));
     }
 }
 
