@@ -1,7 +1,12 @@
-/*******************************************************************************
+/**************************************************************************************
+ * Viking v68 VCU can.c
  *
- *******************************************************************************/
-
+ * Nicole Swierstra, Jackson Newman
+ * 10/13/2026
+ *
+ * Function:
+ * 		Holds CAN init and other various CAN related programs.
+ ***************************************************************************************/
 #ifndef STM32H533xx
 #define STM32H533xx
 #endif
@@ -19,7 +24,6 @@ static SemaphoreHandle_t tx_mutex[CAN_NUM_BUSES];
 static volatile uint32_t rx_dropped[CAN_NUM_BUSES];
 static bool startup = true;
 
-
 CAN_Message_t rx_buffer[CAN_RX_BUFFER_LEN];
 
 /* Index of last CAN message put */
@@ -29,7 +33,6 @@ uint16_t rx_get_head = 0;
 
 
 /* TODO: implement this perhaps */
-
 #define CAN_TX_BUFFER_LEN 32
 CAN_Message_t tx_buffer[CAN_TX_BUFFER_LEN];
 
@@ -265,17 +268,15 @@ static void CAN_receiveMessage(uint32_t id, uint16_t bus,uint16_t len, uint32_t*
 
     /* 
      * Sends the message to its respective queue, sets xHigher... to true if
-     * the taks it interrupted had lower priority and returns if it succeeded or 
-     *
-     * 
+     * the task it interrupted had lower priority and returns if it succeeded or...
      */
     if (xQueueSendFromISR(rx_queue[bus], &msg, xHigherPriorityTaskWoken) != pdTRUE) rx_dropped[bus]++;
 }
 
 /*******************************************************************************
- * fdcanX_itY_handler()
+ * static void CAN_FIFO_Process(FDCAN_GlobalTypeDef* FDCAN, CAN_Bus_t bus...
+ *
  * 
- * Activates when the FIFO interrupt triggers. Sends it to CAN_FIFO_Process...
  * 
  *******************************************************************************/
 static void CAN_FIFO_Process(FDCAN_GlobalTypeDef* FDCAN, CAN_Bus_t bus, int fifo, BaseType_t* xHigherPriorityTaskWoken) {
@@ -325,12 +326,6 @@ void fdcan1_it1_handler() {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     FDCAN1->IR = FDCAN_IR_RF1N;    /* Clear new message */
     CAN_FIFO_Process(FDCAN1, CAN1_BUS, 1, &xHigherPriorityTaskWoken);
-    /* xHigherPriorityTaskWoken = pdFALSE then no context switch
-     * xHigherPriorityTaskWoken = pdTRUE switch context
-     * Example:
-     *      Logger task running (low PRIO), then the CAN task fires
-     *
-     */
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
@@ -351,103 +346,12 @@ void fdcan2_it1_handler() {
 bool CAN_getMessage(uint16_t bus, CAN_Message_t* msg, TickType_t wait) {
     return xQueueReceive(rx_queue[bus], msg, wait) == pdTRUE;
 }
-
+/*******************************************************************************
+ * fdcanX_itY_handler()
+ *
+ * Activates when the FIFO interrupt triggers. Sends it to CAN_FIFO_Process...
+ *
+ *******************************************************************************/
 uint32_t CAN_rxDropped(uint16_t bus) {
     return rx_dropped[bus];
 }
-
-
-
-/* CAN_receiveMessage */
-// void CAN_recieveMessage(uint32_t id, uint16_t bus, uint16_t len, uint32_t * data) {
-//     rx_buffer[rx_put_head] = (CAN_Message_t){id, len, bus, {data[0], data[1]}};
-//     rx_put_head++;
-//     if (rx_put_head == CAN_RX_BUFFER_LEN) rx_put_head = 0;
-// }
-
-/* Former CAN_sendmessage */
-// void CAN_sendmessage(FDCAN_GlobalTypeDef* FDCAN, uint16_t id, uint8_t length, uint8_t* data) {
-//     /* wait while buffer is full, if it doesn't become unfull, return */
-//     int timeout = 1600000;
-//     while ((FDCAN->TXFQS & FDCAN_TXFQS_TFQF_Msk) && timeout) timeout--;
-
-//     /* first open buffer slot */
-//     int j = (FDCAN->TXFQS & FDCAN_TXFQS_TFQPI_Msk) >> FDCAN_TXFQS_TFQPI_Pos;
-
-//     /* Find the indexed buffer */
-//     FDCAN_SRAM_Typedef * fd_ram = (FDCAN == FDCAN1) ? FDCAN1_RAM : FDCAN2_RAM;
-//     FDCAN_Tx_FIFO_Element_Typedef *msg = &fd_ram->tx_buffers[j];
-
-//     msg->H0 = 0; /* 11 bit ID goes to T0 */
-//     msg->H0 |= ((uint32_t)id << FDCAN_TXBH0_STDID_Pos); /* STDID */
-
-//     msg->H1  = 0;
-//     msg->H1 |= ((uint32_t)length << FDCAN_TXBH1_DLC_Pos); /* DLC */
-
-//     msg->data[0] = *((uint32_t*)data);
-//     msg->data[1] = *(((uint32_t*)data) + 1);
-
-//     FDCAN->TXBAR |= (1UL << j); /* Trigger message by writing to TX buffer */
-// }
-
-/* Old recieve */
-// void CAN_recieve1RX0() {
-//     uint32_t fifo_get_idx = (FDCAN1->RXF0S & FDCAN_RXF0S_F0GI_Msk) >> FDCAN_RXF0S_F0GI_Pos;
-//     FDCAN_Rx_FIFO_Element_Typedef* msg = FDCAN1_RAM->rx_fifo0 + fifo_get_idx;
-//     CAN_recieveMessage(_get_id(msg), 0, CAN_bytesFromDLC(_get_dlc(msg)), _get_data(msg));
-//     FDCAN1->RXF0A = fifo_get_idx;
-// }
-
-// void CAN_recieve1RX1() {
-//     uint32_t fifo_get_idx = (FDCAN1->RXF1S & FDCAN_RXF1S_F1GI_Msk) >> FDCAN_RXF1S_F1GI_Pos;
-//     FDCAN_Rx_FIFO_Element_Typedef* msg = FDCAN1_RAM->rx_fifo1 + fifo_get_idx;
-//     CAN_recieveMessage(_get_id(msg), 0, CAN_bytesFromDLC(_get_dlc(msg)), _get_data(msg));
-//     FDCAN1->RXF1A = fifo_get_idx;
-// }
-
-// void CAN_recieve2RX0() {
-//     uint32_t fifo_get_idx = (FDCAN2->RXF0S & FDCAN_RXF0S_F0GI_Msk) >> FDCAN_RXF0S_F0GI_Pos;
-//     FDCAN_Rx_FIFO_Element_Typedef* msg = FDCAN2_RAM->rx_fifo0 + fifo_get_idx;
-//     CAN_recieveMessage(_get_id(msg), 1, CAN_bytesFromDLC(_get_dlc(msg)), _get_data(msg));
-//     FDCAN2->RXF0A = fifo_get_idx;
-// }
-
-// void CAN_recieve2RX1() {
-//     uint32_t fifo_get_idx = (FDCAN2->RXF1S & FDCAN_RXF1S_F1GI_Msk) >> FDCAN_RXF1S_F1GI_Pos;
-//     FDCAN_Rx_FIFO_Element_Typedef* msg = FDCAN2_RAM->rx_fifo1 + fifo_get_idx;
-//     CAN_recieveMessage(_get_id(msg), 1, CAN_bytesFromDLC(_get_dlc(msg)), _get_data(msg));
-//     FDCAN2->RXF1A = fifo_get_idx;
-// }
-
-// CAN_Message_t* CAN_getFirstMsg() {
-// 	if(rx_get_head == rx_put_head) return 0;
-//     uint32_t old = rx_get_head;
-//     rx_get_head++;
-//     if (rx_get_head >= CAN_RX_BUFFER_LEN) rx_get_head = 0;
-
-//     return rx_buffer + old;
-// }
-
-
-
-/* Old interrupt handlers */
-// void fdcan1_it0_handler() {
-//     CAN_recieve1RX0();
-//     FDCAN1->IR |= FDCAN_IR_RF0N;
-// }
-
-// void fdcan1_it1_handler() {
-//     CAN_recieve1RX1();
-//     FDCAN1->IR |= FDCAN_IR_RF1N;
-// }
-
-// void fdcan2_it0_handler() {
-//     CAN_recieve2RX0();
-//     FDCAN2->IR |= FDCAN_IR_RF0N;
-// }
-
-// void fdcan2_it1_handler() {
-//     CAN_recieve2RX1();
-//     FDCAN2->IR |= FDCAN_IR_RF1N;
-// }
-

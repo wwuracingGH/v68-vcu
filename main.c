@@ -1,6 +1,9 @@
-/*
+/**************************************************************************************
+ * Viking v68 VCU main.c
+ * 
  * Nicole Swierstra, Renee Anderson, Jackson Newman
- * Viking 67 main logic
+ * 10/13/2026
+ * v68 is derived from v67 logic but integrates FreeRTOS
  *  
  * State machine logic:
  * There are 4 main states:
@@ -9,10 +12,11 @@
  * MC-init
  * MC-reset
  * 
+ * 
  * Idle is the state the VCU defaults to upon reset
  * Ready to Drive is the state where the motor controller is energized and initialized
  * 
- */
+ ***************************************************************************************/
 #include <stdint.h>
 #include <stdbool.h>
 #ifndef STM32H533xx
@@ -200,9 +204,7 @@ void switch_state(Vcu_t next_state) {
     xSemaphoreGive(state_mutex);
 }
 
-// TODO: returns time in miliseconds since chip was first powered on
 uint32_t GetTick() { 
-    // return xTaskGetTickCount(); //possible solution
     return xTaskGetTickCount(); 
 }
 
@@ -242,25 +244,11 @@ static void buzzer_off_cb(TimerHandle_t t) { (void)t; BUZZEROFF(); }
 
 void Shared_processCAN(CAN_Message_t* msg);
 
-/****************************************************************
-     TASK                PERIOD  STATE  asigned?
-0	_update_logging	    71 ms	all     Y
-1	Shared_processCAN	1 ms	all     Y
-2	Shared_diagnostics	10 ms	all     Y
-3	Shared_CANWatchdog	100 ms	all     Y
-4	MC_sendCommand	    5 ms	RTD     Y
-5	MC_watchdog	        100 ms	RTD     Y
-6	MC_sendStop	        5 ms	Idle, MC-init, Reset    Y
-7	Shared_control	    1 ms	RTD, Idle   Y
-8	RTD_input           50 ms	RTD     Y
-9	Idle_input	        50 ms	Idle    Y
-10	Reset_input         50 ms	Reset   Y
-11	MCInit_loop	        5 ms	MC-init Y
-12	Reset_MC            50 ms	Reset   Y
- ******************************************************************/
 int main(void) {
     clock_init();
     GPIO_init(); 
+    CTRL_ADCinit();
+    logging_init();
 
     xTaskCreate(CAN_rxTask,
                 "can1_rx",
@@ -290,7 +278,6 @@ int main(void) {
 				SLOW_TASK_PRIORITY,
 				NULL
                 );
-
     //xTaskCreate();
     state_mutex = xSemaphoreCreateMutex();
     
@@ -303,14 +290,8 @@ int main(void) {
                                 NULL,
                                 buzzer_off_cb);
 
-
-    //RTOS_init();
-    CTRL_ADCinit();
-    logging_init();
-    // wtf why is _enable_logging only def and scheduled in log.h
     //_enable_logging_all();
     LOGLN("STARTING STM");
-
     car_state.plausibility_latch = 0;
     car_state.last_valid_tr = 0;
     car_params = FLASH_getVals();
@@ -322,6 +303,123 @@ int main(void) {
     vTaskStartScheduler();
     for (;;) {
         // GO!!!!
+    }
+}
+
+/*******************************************************************************
+ * void CAN_rxTask(void* params)
+ * 
+ * params given at initialization (see main.c). Basically two tasks, one for each
+ * CAN peripheral (two), CAN1 (can1_rx) is higher prio so if CAN2 is writing or
+ * logging and CAN2's Queue has messages CAN1 will empty its messages first.
+ * Loops stops when CAN_getMessage()'s xQueueReceive(rx_queue[bus], msg, wait)
+ * notices queue is empty and sleeps letting other tasks run.
+ * unblocks when additional messages come into the queue. When a message arrives
+ * in the FIFO an interrupt fires and takes over the CPU (interrupted tasks TCB
+ * gets sent to the stack). ISR functions requests xQueueSendFromISR() to write
+ * the message to the queue, at the same time it compares the blocked task's
+ * priority to the interrupted, regardless it places the blocked task CAN_rxTask
+ * onto the READY list according to its priority. xQueueSendFromISR() changes
+ * xHigherPriorityTaskWoken if the blocked task (CAN_rxTask) has higher priority
+ * than the interrupted task. portYIELD_FROM_ISR(xHigherPriorityTaskWoken) will
+ * activate the task switch/preemption if true. At that point instead of returning
+ * to the lower priority task it just runs CAN_rxTask instead.
+ *******************************************************************************/
+void CAN_rxTask(void* params) {
+    CAN_Bus_t bus = (CAN_Bus_t)(uint32_t)params;
+    CAN_Message_t msg;
+
+    for (;;) {
+        if (CAN_getMessage(bus, &msg, portMAX_DELAY))
+            Shared_processCAN(&msg);
+    }
+}
+
+/*******************************************************************************
+ * void Control_Task(void* params)
+ * 
+ * Wakes every control_period ms.
+ * Shared_control
+ * MC_sendCommand
+ * MC_sendStop
+ * MCInit_loop
+ *******************************************************************************/
+void Control_Task(void* params) {
+	(void)params;
+    TickType_t last_wake = xTaskGetTickCount();
+    /* Looking at state diagram we start in IDLE*/
+    uint32_t n = 0;
+    switch_state(VCU_STATE_IDLE);
+    for (;;) {
+        Vcu_t state = car_state.state;
+
+        if (state == VCU_STATE_IDLE || state == VCU_STATE_RTD)
+            Shared_control();
+        /* 5*control_period = mc_command_period */
+        if (n % mc_command_period == 0) {
+            if (state == VCU_STATE_RTD) 
+                MC_sendCommand();
+            else                        
+                MC_sendStop();
+            if (state == VCU_STATE_MCINIT) 
+                MCInit_loop();
+        }
+        n++;
+        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(control_period));
+    }
+}
+
+/*******************************************************************************
+ * void Diagnostic_Task(void* params)
+ * 
+ * Maybe work?
+ *******************************************************************************/
+void Diagnostic_Task(void* params) {
+	(void)params;
+    TickType_t last_wake = xTaskGetTickCount();
+    for (;;) {
+        Shared_diagnostics();
+        _update_logging();
+        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(diagnostics_period));
+    }
+}
+
+/*******************************************************************************
+ * void Input_Task(void* params)
+ * 
+ * given the period check the state and do
+ * Idle_input();
+ * RTD_input();
+ * Reset_MC();
+ * Reset_input
+ * Shared_CANWatchdog()
+ * 
+ *******************************************************************************/
+void Input_Task(void* params) {
+	(void)params;
+    TickType_t last_wake = xTaskGetTickCount();
+    uint32_t n = 0;
+    for (;;) {
+        switch (car_state.state) {
+            case VCU_STATE_IDLE:  
+                Idle_input(); 
+                break;
+            case VCU_STATE_RTD:   
+                RTD_input();  
+                break;
+            case VCU_STATE_RESET: 
+                Reset_MC(); 
+                Reset_input(); 
+                break;
+            default: break;
+        }
+        // if (n % 2 == 0) {    /* 100 ms */
+        //     if (car_state.state == VCU_STATE_RTD) 
+        //          MC_watchdog();
+        //          Shared_CANWatchdog();
+        // }
+        n++;
+        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(input_period));
     }
 }
 
@@ -355,7 +453,6 @@ void Idle_start() {
     MC_sendCommand();
 }
 
-
 /*TODO*/
 void Idle_input() {
     // TODO: timestamps
@@ -365,12 +462,15 @@ void Idle_input() {
     if (MC_faulted()) {
         GPIO_setLED(LED_COLOR_FAULT);
     } else {
-        GPIO_setLED(LED_COLOR_IDLE);
+         GPIO_setLED(LED_COLOR_IDLE);
     }
 
     /* check that it is in a state of hard braking before getting into rtd */
-    int braking = IGNORE_BRAKES || (car_state.last_ctrl_vec.brake_pressure > car_params->params.hard_braking);
 
+    /* MUST RE ENABLE BRAKE CHECK OR DIE */
+    /* enable later because my test bench doesnt have a brake pedal */
+    int braking = IGNORE_BRAKES || (car_state.last_ctrl_vec.brake_pressure > car_params->params.hard_braking);
+    //int braking = 1;
     if (braking && GPIO_buttonReleased(INPUT_BUTTONID_RTD) && car_state.last_valid_tr < 10) {
         GPIO_buttonConsume(INPUT_BUTTONID_RTD);
         if(MC_faultedR()){
@@ -382,7 +482,6 @@ void Idle_input() {
         }
     }
 }
-
 
 /* ====== Shared functionality ====== */
 void Shared_diagnostics() {
@@ -444,172 +543,6 @@ void Shared_processCAN(CAN_Message_t* msg) {
     }
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/*******************************************************************************
- * void CAN_rxTask(void* params)
- * 
- * params given at initialization (see main.c). Basically two tasks, one for each
- * CAN peripheral (two), CAN1 (can1_rx) is higher prio so if CAN2 is writing or
- * logging and CAN2's Queue has messages CAN1 will empty its messages first.
- * Loops stops when CAN_getMessage()'s xQueueReceive(rx_queue[bus], msg, wait)
- * notices queue is empty and sleeps letting other tasks run.
- * unblocks when additional messages come into the queue. When a message arrives
- * in the FIFO an interrupt fires and takes over the CPU (interrupted tasks TCB
- * gets sent to the stack). ISR functions requests xQueueSendFromISR() to write
- * the message to the queue, at the same time it compares the blocked task's
- * priority to the interrupted, regardless it places the blocked task CAN_rxTask
- * onto the READY list according to its priority. xQueueSendFromISR() changes
- * xHigherPriorityTaskWoken if the blocked task (CAN_rxTask) has higher priority
- * than the interrupted task. portYIELD_FROM_ISR(xHigherPriorityTaskWoken) will
- * activate the task switch/preemption if true. At that point instead of returning
- * to the lower priority task it just runs CAN_rxTask instead.
- *******************************************************************************/
-void CAN_rxTask(void* params) {
-    CAN_Bus_t bus = (CAN_Bus_t)(uint32_t)params;
-    CAN_Message_t msg;
-
-    for (;;) {
-        if (CAN_getMessage(bus, &msg, portMAX_DELAY))
-            Shared_processCAN(&msg);
-    }
-}
-/*******************************************************************************
- * void Control_Task(void* params)
- * 
- * Wakes every control_period ms.
- * Shared_control
- * MC_sendCommand
- * MC_sendStop
- * MCInit_loop
- *******************************************************************************/
-void Control_Task(void* params) {
-	(void)params;
-    TickType_t last_wake = xTaskGetTickCount();
-    /* Looking at state diagram we start in IDLE*/
-    uint32_t n = 0;
-    switch_state(VCU_STATE_IDLE);
-    for (;;) {
-        Vcu_t state = car_state.state;
-
-        if (state == VCU_STATE_IDLE || state == VCU_STATE_RTD)
-            Shared_control();
-        /* 5*control_period = mc_command_period */
-        if (n % mc_command_period == 0) {
-            if (state == VCU_STATE_RTD) 
-                MC_sendCommand();
-            else                        
-                MC_sendStop();
-            if (state == VCU_STATE_MCINIT) 
-                MCInit_loop();
-        }
-        n++;
-        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(control_period));
-    }
-    /*
-    for (;;) {
-        vTaskDelayuntil(&last_wake, pdMS_TO_TICKS(control_period));
-    }
-    */
-}
-
-/*******************************************************************************
- * void Diagnostic_Task(void* params)
- * 
- * 
- *******************************************************************************/
-void Diagnostic_Task(void* params) {
-	(void)params;
-    TickType_t last_wake = xTaskGetTickCount();
-    for (;;) {
-        Shared_diagnostics();
-        _update_logging();
-        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(diagnostics_period));
-    }
-}
-
-/*******************************************************************************
- * void Input_Task(void* params)
- * 
- * given the period check the state and do
- * Idle_input();
- * RTD_input();
- * Reset_MC();
- * Reset_input
- * Shared_CANWatchdog()
- * 
- *******************************************************************************/
-void Input_Task(void* params) {
-	(void)params;
-    TickType_t last_wake = xTaskGetTickCount();
-    uint32_t n = 0;
-    for (;;) {
-        switch (car_state.state) {
-            case VCU_STATE_IDLE:  
-                Idle_input(); 
-                break;
-            case VCU_STATE_RTD:   
-                RTD_input();  
-                break;
-            case VCU_STATE_RESET: 
-                Reset_MC(); 
-                Reset_input(); 
-                break;
-            default: break;
-        }
-        // if (n % 2 == 0) {                   /* 100 ms */
-        //     if (car_state.state == VCU_STATE_RTD) 
-        //          MC_watchdog();
-        //          Shared_CANWatchdog();
-        // }
-        n++;
-        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(input_period));
-    }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 void Shared_control() {
     const int fault_ignore     = 20;
     const int fault_cutoff     = 80;
@@ -651,6 +584,18 @@ void Shared_control() {
     car_state.last_ctrl_vec.torque = command_msg.torqueCommand;
 
     LOG("%d %d %d %d\n", command_msg.torqueCommand, car_state.fault_counter, tr.torque, tr.flags);
+}
+
+// TODO
+void Shared_CANWatchdog() {
+    if (!CAN_WATCHDOG) return;
+
+    uint32_t tick = GetTick();
+    uint32_t can1d = tick - car_state.last_can_timestamp1;
+    uint32_t can2d = tick - car_state.last_can_timestamp2;
+
+    if (can1d > CAN_WATCHDOG_TIME || can2d > CAN_WATCHDOG_TIME)
+        CAN_reset();
 }
 
 /* this is a bad idea I think */
@@ -784,69 +729,4 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
     (void)pcTaskName;
     __asm volatile("cpsid i");
     for (;;);
-}
-
-
-// void Shared_processCAN() {
-//     CAN_Message_t * msg;
-//     uint32_t tick = GetTick();
-//     while((msg = CAN_getFirstMsg()) != 0) {
-//         if (msg->bus_id == 0) 
-//             car_state.last_can_timestamp1 = tick; 
-//         if (msg->bus_id == 1)
-//             car_state.last_can_timestamp2 = tick; 
-
-//         switch (msg->id) {
-//         case MC_CANID_HIGHSPEEDMESSAGE:
-//             memcpy_32((uint32_t*)&car_state.mc_hsmsg, msg->data, 2);
-//             car_state.mc_hsmsg_timestamp = tick;
-//             break;
-//         case DL_CANID_ACCEL:
-//             memcpy_32((uint32_t*)&car_state.dl_accel, msg->data, 2);
-//             car_state.dl_accel_timestamp = tick;
-//             break;
-//         case DL_CANID_WHEELSPEED:
-//             memcpy_32((uint32_t*)&car_state.dl_wheelspeed, msg->data, 2);
-//             car_state.dl_wheelspeed_timestamp = tick;
-//             break;
-//         case MC_CANID_FAULTCODES:
-//             memcpy_32((uint32_t*)&car_state.mc_faults, msg->data, 2);
-//             car_state.mc_faults_timestamp = tick;
-//             break;
-//         case MC_CANID_VOLTAGEINFO:
-//             memcpy_32((uint32_t*)&car_state.mc_vinfo, msg->data, 2);
-//             car_state.mc_vinfo_timestamp = tick;
-//             break;
-//         case MC_CANID_INTERNALSTATES:
-//             memcpy_32((uint32_t*)&car_state.mc_istates, msg->data, 2);
-//             car_state.mc_istates_timestamp = tick;
-//             break;
-//         /* TODO: Reprogram/Reveal */
-//         case VCU_CANID_PARAM_CHANGE:
-//         	VCU_ParamSet* ps = (VCU_ParamSet*)msg->data;
-//         	FLASH_storeVal(ps->id, ps->setValue, ps->write);
-//         	apps_mult = CTRL_getADCMultiplers(&car_params->adc_bounds);
-//         	break;
-//         case VCU_CANID_PARAM_REQUEST:
-//         	VCU_ParamReq* rq = (VCU_ParamReq*)msg->data;
-//         	VCU_ParamReveal rv = { FLASH_getVal(rq->id), rq->id };
-//         	CAN_sendmessage(msg->bus_id ? DATA_CAN : CTRL_CAN, VCU_CANID_PARAM_REVEAL, 6, (uint8_t*)&rv);
-//             break;
-//         default:
-//             break;
-//         }
-//     }
-//     return pdTRUE;
-// }
-
-// TODO
-void Shared_CANWatchdog() {
-    if (!CAN_WATCHDOG) return;
-
-    uint32_t tick = GetTick();
-    uint32_t can1d = tick - car_state.last_can_timestamp1;
-    uint32_t can2d = tick - car_state.last_can_timestamp2;
-
-    if (can1d > CAN_WATCHDOG_TIME || can2d > CAN_WATCHDOG_TIME)
-        CAN_reset();
 }
