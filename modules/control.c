@@ -156,14 +156,14 @@ void sort_dat_4(int32_t * vals) {
 }
 
 /* returns pedal position given the curve */
-uint16_t apply_curve(uint16_t pedal_pos, uint8_t* lut) {
+uint16_t apply_curve(uint16_t pedal_pos, uint16_t* lut) {
     const int OFFSET_BITS = (sizeof(pedal_pos) * 8) - TORQUE_CURVE_BITS;
     
     uint16_t low_bin = pedal_pos >> OFFSET_BITS;
     uint16_t offset = pedal_pos & ((uint16_t)-1 >> TORQUE_CURVE_BITS);
     
-    int low = lut[low_bin] << 8;
-    int high = (low_bin != TORQUE_CURVE_LEN - 1) ? lut[low_bin + 1] << 8 : 65536;
+    int low = lut[low_bin];
+    int high = (low_bin != TORQUE_CURVE_LEN - 1) ? lut[low_bin + 1] : 65536;
     
     int out = (((high - low) * offset) >> OFFSET_BITS) + low;
     
@@ -267,18 +267,22 @@ ControlReq_t CTRL_getCommand(ADC_Mult_t* mult, ControlParams_t* params, uint16_t
         control_request.flags |= APPS_FAULT_DELTA;
     }
 
+    /* bound the average */
     if (avg < 0) avg = 0;
     if (avg > 65535) avg = 65535;
-
 
     control_request.brake_pressure = ((uint32_t)braking_pressure * params->max_braking_pres) >> 16;
     if (avg > APPS_BPS_PLAUS && control_request.brake_pressure > params->hard_braking) {
         control_request.flags |= APPS_FAULT_PLAUS;
     }
 
-    uint16_t torquefraction = apply_curve(avg, params->torque_curve);
+    /* returns a value in [-10000, 10000]*/
+    uint16_t torquepercentage = apply_curve(avg, params->torque_curve);
     
-    control_request.torque = (torquefraction * params->max_torque) >> 16;
+    /* needs to be max_torque (not variable) instead of bound (varies) */
+    int multiplier = ((params->max_torque << 16)/10000) + 1;
+    /* could be a bitshift ig - i'll leave it up to gcc O3 */
+    control_request.torque = (torquepercentage * multiplier) / 65536; 
     if (control_request.torque > bound) {
         control_request.torque = bound;
     }

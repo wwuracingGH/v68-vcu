@@ -87,7 +87,7 @@ typedef struct {
     uint16_t hard_braking;      /* total system pressure for hard braking */
     uint16_t max_braking_pres;  /* maximum braking pressure - 10x bar */
     uint16_t _reserved2;
-    uint8_t torque_curve[TORQUE_CURVE_LEN];
+    int16_t torque_curve[TORQUE_CURVE_LEN];
 } ControlParams_t;
 
 typedef struct {
