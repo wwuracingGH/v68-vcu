@@ -2,7 +2,9 @@
 #include "stm32h533xx.h"
 #include <stdint.h>
 #include "logging.h"
+
 #include "../flashsettings.h"
+#include "../vendor/v68-vsw-def/outputs/vcu_parampipe.c"
 
 volatile CarParameters_t* stored_values = (CarParameters_t*)0x08070000;
 
@@ -41,6 +43,21 @@ const int use_default = 0;
 void FLASH_Init() {
   	FLASH->NSKEYR = 0x45670123;
 	FLASH->NSKEYR = 0xCDEF89AB;
+
+	ParamPipe_APPS1_L = &ram_values.adc_bounds.APPS1_l;
+	ParamPipe_APPS2_L = &ram_values.adc_bounds.APPS2_l;
+	ParamPipe_APPS3_L = &ram_values.adc_bounds.APPS3_l;
+	ParamPipe_APPS4_L = &ram_values.adc_bounds.APPS4_l;
+	ParamPipe_APPS1_H = &ram_values.adc_bounds.APPS1_h;
+	ParamPipe_APPS2_H = &ram_values.adc_bounds.APPS2_h;
+	ParamPipe_APPS3_H = &ram_values.adc_bounds.APPS3_h;
+	ParamPipe_APPS4_H = &ram_values.adc_bounds.APPS4_h;
+	ParamPipe_BPS_S_MIN = &ram_values.adc_bounds.BPS_s_min;
+	ParamPipe_BPS_S_MAX = &ram_values.adc_bounds.BPS_s_max;
+	ParamPipe_BPS_F_BIAS = &ram_values.adc_bounds.BPS_f_bias;
+	ParamPipe_MAX_TORQUE = &ram_values.params.max_torque;
+	ParamPipe_HARD_BRAKING = &ram_values.params.hard_braking;
+	ParamPipe_MAX_BRAKE_P = &ram_values.params.max_braking_pres;
 };
 
 /*
@@ -150,113 +167,11 @@ CarParameters_t* FLASH_getVals(){
 }
 
 int FLASH_getVal(int id){
-	switch(id) {
-		case FLASH_PARAMID_APPS1_L: 
-			return (int)ram_values.adc_bounds.APPS1_l;
-		case FLASH_PARAMID_APPS1_H: 
-			return (int)ram_values.adc_bounds.APPS1_h;
-		case FLASH_PARAMID_APPS2_L: 
-			return (int)ram_values.adc_bounds.APPS2_l;
-		case FLASH_PARAMID_APPS2_H: 
-			return (int)ram_values.adc_bounds.APPS2_h;
-		case FLASH_PARAMID_APPS3_L: 
-			return (int)ram_values.adc_bounds.APPS3_l;
-		case FLASH_PARAMID_APPS3_H: 
-			return (int)ram_values.adc_bounds.APPS3_h;
-		case FLASH_PARAMID_APPS4_L: 
-			return (int)ram_values.adc_bounds.APPS4_l;
-		case FLASH_PARAMID_APPS4_H: 
-			return (int)ram_values.adc_bounds.APPS4_h;
-		case FLASH_PARAMID_BPS_S_MIN: 
-			return (int)ram_values.adc_bounds.BPS_s_min;
-		case FLASH_PARAMID_BPS_S_MAX: 
-			return (int)ram_values.adc_bounds.BPS_s_max;
-		case FLASH_PARAMID_BPS_F_BIAS:
-			return (int)ram_values.adc_bounds.BPS_f_bias; 
-		case FLASH_PARAMID_MAX_TORQUE: 
-			return (int)ram_values.params.max_torque;
-		case FLASH_PARAMID_HARD_BRAKING: 
-			return (int)ram_values.params.hard_braking;
-		case FLASH_PARAMID_MAX_BRAKE_P: 
-			return (int)ram_values.params.max_braking_pres;
-	}
-
-	{
-		int tcurve = id - FLASH_PARAMID_T_CURVE_STRT;
-		if (tcurve >= 0 && tcurve < FLASH_PARAMID_T_CURVE_LEN) {
-			int i = tcurve * 4;
-			return (uint32_t)ram_values.params.torque_curve[i + 0] << 0 |
-				   (uint32_t)ram_values.params.torque_curve[i + 1] << 8 |
-				   (uint32_t)ram_values.params.torque_curve[i + 2] << 16 |
-				   (uint32_t)ram_values.params.torque_curve[i + 3] << 24;
-		}
-	}
-
-	return -1;
+	return 	parampipe_getvalue(id);
 }
 
 void FLASH_storeVal(int id, int newVal, int write){
-	switch(id) {
-		case FLASH_PARAMID_APPS1_L: 
-			ram_values.adc_bounds.APPS1_l = (uint16_t)newVal;
-			break;
-		case FLASH_PARAMID_APPS1_H: 
-			ram_values.adc_bounds.APPS1_h = (uint16_t)newVal;
-			break;
-		case FLASH_PARAMID_APPS2_L: 
-			ram_values.adc_bounds.APPS2_l = (uint16_t)newVal;
-			break;
-		case FLASH_PARAMID_APPS2_H: 
-			ram_values.adc_bounds.APPS2_h = (uint16_t)newVal;
-			break;
-		case FLASH_PARAMID_APPS3_L: 
-			ram_values.adc_bounds.APPS3_l = (uint16_t)newVal;
-			break;
-		case FLASH_PARAMID_APPS3_H: 
-			ram_values.adc_bounds.APPS3_h = (uint16_t)newVal;
-			break;
-		case FLASH_PARAMID_APPS4_L: 
-			ram_values.adc_bounds.APPS4_l = (uint16_t)newVal;
-			break;
-		case FLASH_PARAMID_APPS4_H: 
-			ram_values.adc_bounds.APPS4_h = (uint16_t)newVal;
-			break;
-		case FLASH_PARAMID_BPS_S_MIN: 
-			ram_values.adc_bounds.BPS_s_min = (uint16_t)newVal;
-			break;
-		case FLASH_PARAMID_BPS_S_MAX: 
-			ram_values.adc_bounds.BPS_s_max = (uint16_t)newVal;
-			break;
-		case FLASH_PARAMID_BPS_F_BIAS:
-			ram_values.adc_bounds.BPS_f_bias = (uint16_t)newVal; 
-			break;
-		case FLASH_PARAMID_MAX_TORQUE: 
-			ram_values.params.max_torque = (uint16_t)newVal;
-			break;
-		case FLASH_PARAMID_HARD_BRAKING: 
-			ram_values.params.hard_braking = (uint16_t)newVal;
-			break;
-		case FLASH_PARAMID_MAX_BRAKE_P: 
-			ram_values.params.max_braking_pres = (uint16_t)newVal;
-			break;
-		default: break;
-	}
-	/* 
-	 * WTF? TODO how does this even work? 0xFF = bottom 8 bits
-	 * every shift right 8 bits loses bottom bits ie =0000...
-	 * wtf
-	 */
-
-	{
-		int tcurve = id - FLASH_PARAMID_T_CURVE_STRT;
-		if (tcurve >= 0 && tcurve < FLASH_PARAMID_T_CURVE_LEN) {
-			int i = tcurve * 4;
-			ram_values.params.torque_curve[i + 0] = (newVal << 0 ) & 0xFF;
-			ram_values.params.torque_curve[i + 1] = (newVal << 8 ) & 0xFF;
-			ram_values.params.torque_curve[i + 2] = (newVal << 16) & 0xFF;
-			ram_values.params.torque_curve[i + 3] = (newVal << 24) & 0xFF;
-		}
-	}
+	parampipe_setvalue(id, newVal);
 
 	if (write) {
 		FLASH_WriteSector(&ram_values, (uint32_t*)stored_values, sizeof(CarParameters_t));

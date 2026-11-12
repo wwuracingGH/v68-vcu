@@ -1,0 +1,3 @@
+[submodule "vendor/v68-vsw-def"]
+	path = vendor/v68-vsw-def
+	url = https://github.com/wwuracingGH/v68-vsw-definitions.git

@@ -10,24 +10,6 @@ typedef struct {
     VehicleDynamicParams_t vdp;
 } CarParameters_t;
 
-#define FLASH_PARAMID_APPS1_L 		0x0
-#define FLASH_PARAMID_APPS1_H 		0x1
-#define FLASH_PARAMID_APPS2_L 		0x2
-#define FLASH_PARAMID_APPS2_H 		0x3
-#define FLASH_PARAMID_APPS3_L 		0x4
-#define FLASH_PARAMID_APPS3_H 		0x5
-#define FLASH_PARAMID_APPS4_L 		0x6
-#define FLASH_PARAMID_APPS4_H 		0x7
-#define FLASH_PARAMID_BPS_S_MIN		0x8
-#define FLASH_PARAMID_BPS_S_MAX     0x9
-#define FLASH_PARAMID_BPS_F_BIAS    0xA
-#define FLASH_PARAMID_MAX_TORQUE    0xC
-#define FLASH_PARAMID_HARD_BRAKING  0xD
-#define FLASH_PARAMID_MAX_BRAKE_P   0xE
-
-#define FLASH_PARAMID_T_CURVE_STRT 	0x10
-#define FLASH_PARAMID_T_CURVE_LEN   4
-
 /* 
  * Unlocks the flash to be able to write to it 
  */
