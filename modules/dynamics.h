@@ -40,12 +40,18 @@ typedef struct {
 
 /* TODO */
 typedef struct {
-    float Vx;
+    float v_x;
     float a_x;
     float a_y;
     float omega_z;
 } VehicleDynamicState_t;
 
-VehicleDynamicState_t* updatedModel(uint32_t newTime, ControlReq_t* newControl);
+void VD_Init();
+
+VehicleDynamicState_t* VD_updateModel(uint32_t newTime, ControlReq_t* newControl);
+
+void VD_accelerometerUpdate(uint32_t newTime, float ax, float ay, float az);
+void VD_wheelspeedUpdate(uint32_t newTime);
+void VD_GNSSupdate(uint32_t newTime, float v_x, float dop);
 
 #endif

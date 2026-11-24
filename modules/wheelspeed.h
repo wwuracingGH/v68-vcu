@@ -8,7 +8,7 @@ typedef struct {
     float last_velocity;
     float d_velocity;
     float last_dtime;
-    uint32_t last_tick;
+    int32_t last_tick;
 } WS_data_t;
 
 extern struct _ws_data_struct {

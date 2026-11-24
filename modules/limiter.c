@@ -1,9 +1,9 @@
 #include "limiter.h"
 
-int16_t last_kw_limit = 0.0f;
-int16_t last_sl_limit = 0.0f;
-int16_t last_bms_limit = 0.0f;
-int16_t last_bms_regenlimit = 0.0f;
+int16_t last_kw_limit = 0;
+int16_t last_sl_limit = 0;
+int16_t last_bms_limit = 0;
+int16_t last_bms_regenlimit = 0;
 
 int16_t LIMIT_getLastBMSTorqueLimit()   { return last_bms_limit; }
 int16_t LIMIT_getLastSRTorqueLimit()    { return last_sl_limit; }
@@ -36,6 +36,10 @@ float saturate_regen_cutoff_speed(VehicleDynamicParams_t* params, float speed) {
     return (speed - params->regen_speed_ramp_start) / (params->regen_speed_ramp_end - params->regen_speed_ramp_start);
 }
 
+float get_sliptorque() {
+    return 2200.0f;
+}
+
 int16_t LIMIT_maxTorque(VehicleDynamicParams_t* params, uint16_t max_amps, float bus_voltage, float v_x, float a_y) {
     float max_power = bus_voltage * max_amps * cm200efficiencyatspeed(params, v_x);
     float motor_rps = v_x / params->tire_radius * params->drive_ratio;
@@ -45,7 +49,7 @@ int16_t LIMIT_maxTorque(VehicleDynamicParams_t* params, uint16_t max_amps, float
     int16_t max_80kw_torque = (int16_t)(cm200efficiencyatspeed(params, v_x) * (params->max_power / motor_rps));
 
     /* TODO: implement */
-    int16_t max_slip_ratio_torque = (int16_t)(get_accel_y_multiplier(params, a_y) * 2200.0f);
+    int16_t max_slip_ratio_torque = (int16_t)(get_accel_y_multiplier(params, a_y) * get_sliptorque());
 
     int16_t max_torque = max_bms_torque; /* random big number */
 
