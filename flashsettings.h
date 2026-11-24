@@ -15,8 +15,31 @@
 	
 #define DEFAULT_MAX_TORQUE   1000 
 #define DEFAULT_HARD_BRAKING  100 
-#define DEFAULT_MAX_BRAKING  3000 
+#define DEFAULT_MAX_BRAKING  3000
 
 #define DEFAULT_TORQUE_CURVE  {0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240}
+
+/* DYNAMIC PARAMS */
+#define DEFAULT_GRAVITY         9.806f
+
+#define DEFAULT_VEHICLE_MASS    280.0f
+#define DEFAULT_TIRE_RADIUS     0.2f
+#define DEFAULT_DRIVE_RATIO     3.0f
+#define DEFAULT_MAX_SPEED       45.3785f
+
+#define DEFAULT_SLIP_TARGET     0.1f
+#define DEFAULT_MAX_AX          13.7284f    /* gravity * 1.4 */
+#define DEFAULT_MAX_AY          13.2381f    /* gravity * 1.4 */
+#define DEFAULT_RG_RAMP_STRT    1.67f       /* a bit more than 5 km/h as per the rules */
+#define DEFAULT_RG_RAMP_END     2.5f        /* like 9km/h */
+#define DEFAULT_MAX_POWER       79950.0f    /* slightly less than 80kw */
+
+#define DEFAULT_SLIP_PID_KP     1.0f        /* idk */
+#define DEFAULT_SLIP_PID_KI     1.0f        /* idk */
+#define DEFAULT_SLIP_PID_KD     1.0f        /* idk */
+
+#define DEFAULT_CM200_EFFICIENCY { 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f,}
+#define DEFAULT_SLCTRL_ENABLED  1
+#define DEFAULT_KWCTRL_ENABLED  1
 
 #endif

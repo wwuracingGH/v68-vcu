@@ -9,28 +9,43 @@
 
 #include "control.h"
 
+#define EFFICIENCY_LUT_LEN 32
+
 /* TODO */
 typedef struct {
-    uint32_t dynamicParams;
+    float g;
+
+    float vehicle_mass;
+    float tire_radius;
+    float drive_ratio;
+    float max_speed;
+
+    float slip_ratio_target;
+    float max_ay;
+    float max_ax;
+    float regen_speed_ramp_start;
+    float regen_speed_ramp_end;
+    float max_power;
+
+    float torque_pid_kp;
+    float torque_pid_kd;
+    float torque_pid_ki;
+
+    /* map from rpm / (6500 / 32) -> efficency */
+    float cm200efficiency[EFFICIENCY_LUT_LEN]; 
+    
+    uint8_t slip_ratio_limit_enabled; 
+    uint8_t kw_limit_enabled;
 } VehicleDynamicParams_t;
 
 /* TODO */
 typedef struct {
-    uint32_t dynamicState;
+    float Vx;
+    float a_x;
+    float a_y;
+    float omega_z;
 } VehicleDynamicState_t;
 
-/* TODO */
-typedef struct {
-    uint32_t TODO;
-} ObserverDynamicState_t;
+VehicleDynamicState_t* updatedModel(uint32_t newTime, ControlReq_t* newControl);
 
-
-/*
-VehicleDynamicState_t* updatedModel(uint32_t newTime);
-
-void applyControl(ControlReq_t* newControl, uint32_t newTime);
-
-void applyModel(VehicleDynamicState_t* newState);
-void applyObserver();
-*/
 #endif

@@ -1,5 +1,5 @@
 CC=arm-none-eabi-gcc
-CFLAGS=-mcpu=cortex-m33 -mfpu=auto -mfloat-abi=hard -mthumb -nostdlib -W -Werror -Wall -Wextra -ffunction-sections -g
+CFLAGS=-mcpu=cortex-m33 -mfpu=auto -ffast-math -mfloat-abi=hard -mthumb -nostdlib -W -Werror -Wall -Wextra -ffunction-sections -g
 CPPFLAGS= -DSTM32H533xx -Ivendor/CMSIS/Device/ST/STM32H5/Include \
 	 -Ivendor/CMSIS/Core/Include -Ivendor -I. \
 	 -Ivendor/FreeRTOS-Kernel/include \
@@ -21,7 +21,7 @@ FREERTOS = vendor/FreeRTOS-Kernel
 FREERTOS_PORT = $(FREERTOS)/portable/GCC/ARM_CM33_NTZ/non_secure
 
 $(BINARY): main.o startup.o gpio.o can.o flash.o logging.o printf.o control.o dynamics.o system_stm32h5xx.o \
-           tasks.o list.o queue.o timers.o heap_1.o port.o portasm.o
+           tasks.o list.o queue.o timers.o heap_1.o port.o portasm.o limiter.o wheelspeed.o
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) $^ -o $(BINARY) -lgcc
 
 tasks.o: $(FREERTOS)/tasks.c
@@ -70,7 +70,14 @@ control.o: modules/control.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -O3 $(LDFLAGS) modules/control.c -c 
 
 dynamics.o: modules/dynamics.c
-	$(CC) $(CFLAGS) $(CPPFLAGS) -O3 $(LDFLAGS) modules/dynamics.c -c 
+	$(CC) $(CFLAGS) $(CPPFLAGS) -O3 $(LDFLAGS) modules/dynamics.c -c
+
+limiter.o: modules/limiter.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) -O3 $(LDFLAGS) modules/limiter.c -c
+
+wheelspeed.o: modules/wheelspeed.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) -O3 $(LDFLAGS) modules/wheelspeed.c -c
+
 
 system_stm32h5xx.o: vendor/CMSIS/Device/ST/STM32H5/Source/Templates/system_stm32h5xx.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) vendor/CMSIS/Device/ST/STM32H5/Source/Templates/system_stm32h5xx.c -c

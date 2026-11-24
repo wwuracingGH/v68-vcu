@@ -30,10 +30,28 @@ CarParameters_t default_vals = {
 		0,
 		DEFAULT_TORQUE_CURVE
 	},
-	{0}
+	{
+		DEFAULT_GRAVITY,
+		DEFAULT_VEHICLE_MASS,
+		DEFAULT_TIRE_RADIUS,
+		DEFAULT_DRIVE_RATIO,
+		DEFAULT_MAX_SPEED,
+		DEFAULT_SLIP_TARGET,
+		DEFAULT_MAX_AX,
+		DEFAULT_MAX_AY,
+		DEFAULT_RG_RAMP_STRT,
+		DEFAULT_RG_RAMP_END,
+		DEFAULT_MAX_POWER,
+		DEFAULT_SLIP_PID_KP,
+		DEFAULT_SLIP_PID_KI,
+		DEFAULT_SLIP_PID_KD,
+		DEFAULT_CM200_EFFICIENCY,
+		DEFAULT_SLCTRL_ENABLED,
+		DEFAULT_KWCTRL_ENABLED
+	},	
 };
 
-CarParameters_t ram_values = { sizeof(CarParameters_t), { 0 }, { 0 }, { 0 } };
+CarParameters_t ram_values = { sizeof(CarParameters_t), { 0 }, { 0 }, (VehicleDynamicParams_t){ 0 } };
 int ram_initialized = 0;
 const int use_default = 0;
 

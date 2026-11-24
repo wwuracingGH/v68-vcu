@@ -156,7 +156,7 @@ void sort_dat_4(int32_t * vals) {
 }
 
 /* returns pedal position given the curve */
-uint16_t apply_curve(uint16_t pedal_pos, uint16_t* lut) {
+int16_t apply_curve(uint16_t pedal_pos, int16_t* lut) {
     const int OFFSET_BITS = (sizeof(pedal_pos) * 8) - TORQUE_CURVE_BITS;
     
     uint16_t low_bin = pedal_pos >> OFFSET_BITS;
@@ -167,7 +167,7 @@ uint16_t apply_curve(uint16_t pedal_pos, uint16_t* lut) {
     
     int out = (((high - low) * offset) >> OFFSET_BITS) + low;
     
-    return (uint16_t)out;
+    return (int16_t)out;
 }
 
 ADC_Mult_t CTRL_getADCMultiplers(volatile ADC_Bounds_t* bounds) {
@@ -277,7 +277,7 @@ ControlReq_t CTRL_getCommand(ADC_Mult_t* mult, ControlParams_t* params, uint16_t
     }
 
     /* returns a value in [-10000, 10000]*/
-    uint16_t torquepercentage = apply_curve(avg, params->torque_curve);
+    int16_t torquepercentage = apply_curve(avg, params->torque_curve);
     
     /* needs to be max_torque (not variable) instead of bound (varies) */
     int multiplier = ((params->max_torque << 16)/10000) + 1;
