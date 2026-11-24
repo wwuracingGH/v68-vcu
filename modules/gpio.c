@@ -26,26 +26,7 @@ uint8_t buttonConsumedMask = 0; /* possibly remove? */
 
 uint32_t buttonStartPressedTime[8];
 
-/* internal init function */
-void _init_timer() {
-    RCC->APB1LENR |= RCC_APB1LENR_TIM3EN;
-    
-
-    TIM3->CCR2 = 2000;
-    TIM3->CCR3 = 2000;
-    TIM3->CCR4 = 2000;
-
-    /* enables pwm mode for channels */
-    TIM3->CCMR1 |= (0b0110 << TIM_CCMR1_OC2M_Pos);
-    TIM3->CCMR2 |= (0b0110 << TIM_CCMR2_OC3M_Pos) | (0b0110 << TIM_CCMR2_OC4M_Pos);
-    TIM3->CCER |= TIM_CCER_CC2E | TIM_CCER_CC3E | TIM_CCER_CC4E;
-    TIM3->PSC = 4;     /* divides by 4 to get 62.5 mhz */
-    TIM3->ARR = 65535; /* reloads 2^16 to get ~1khz of led swiching */
-    TIM3->CR1 |= TIM_CR1_UDIS | TIM_CR1_URS;
-    TIM3->CR1 |= TIM_CR1_CEN; /* enable the timer */
-
-}
-
+/* TODO: turn timer pins into gpio pins, fix CAN pins */
 void GPIO_init() {
     RCC->AHB2ENR |= RCC_AHB2ENR_GPIOAEN; /* turn on gpio clocks */
     RCC->AHB2ENR |= RCC_AHB2ENR_GPIOBEN;
@@ -92,8 +73,6 @@ void GPIO_init() {
 
     GPIOB->MODER &= ~(0b11     << GPIO_MODER_MODE12_Pos);  /* RTD BUTTON    */
     GPIOB->PUPDR |= (PUPD_PULLUP    << GPIO_PUPDR_PUPD12_Pos);  /* Button is pulled up */
-
-    _init_timer();
 }
 
 /* registers all of the events */

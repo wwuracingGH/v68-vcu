@@ -1,39 +1,68 @@
 #include "wheelspeed.h"
+#include "stm32h5xx.h"
 
-float PERIOD;
+#define PRESCALER 25
+#define PERIOD (PRESCALER / 250000000.0f) 
 
 const float OFFSET = 0.85f;
 const float DECAY = 10000.0f;
 
 #define PI 3.14159265359f
 #define RC 0.005f
+#define MAX_TIM (0x80000000)
 
 struct _ws_data_struct WS_wheels;
 
 void dataInit(WS_data_t* data);
 void update(WS_data_t* data);
-void gpio_interrupt_fl() { update(&WS_wheels.fl); }
-void gpio_interrupt_fr() { update(&WS_wheels.fr); }
-void gpio_interrupt_rr() { /* not used ATM */ }
-void gpio_interrupt_rl() { /* not used ATM */ }
 
-void timer_interrupt();
+void tim2_handler(void) {
+    WS_wheels.fl.last_tick = __QSUB(WS_wheels.fl.last_tick, MAX_TIM); /* saturating subtract */
+    WS_wheels.fr.last_tick = __QSUB(WS_wheels.fr.last_tick, MAX_TIM); /* saturating subtract */
+    TIM2->SR &= ~TIM_SR_UIF;
+}
 
-void WS_Init(uint32_t ticks_of_period) {
-    /* init timer 2 or timer 5 here */
+void exti7_handler(void) {
+    update(&WS_wheels.fl);
+    EXTI->RPR1 |= EXTI_RPR1_RPIF7;
+}
 
-    PERIOD = ticks_of_period / 250000000.0f;
+void exti6_handler(void) {
+    update(&WS_wheels.fr);
+    EXTI->RPR1 |= EXTI_RPR1_RPIF6;
+}
+
+void exti1_handler(void) {
+    EXTI->RPR1 |= EXTI_RPR1_RPIF1;
+}
+
+void exti0_handler(void) {
+    EXTI->RPR1 |= EXTI_RPR1_RPIF0;
+}
+
+void WS_Init() {
+    RCC->APB1LENR |= RCC_APB1LENR_TIM2EN;
+    
+    TIM2->PSC = PRESCALER;  /* divides by 25 to get 10 mhz */
+    TIM2->ARR = MAX_TIM; /* reloads after like 3m 30s */
+    TIM2->CR1 |= TIM_CR1_URS; /* only have an update in the case of a overflow */ 
+    TIM2->CR1 |= TIM_CR1_CEN; /* enable the timer */
+    
+    /*            FL               FR               RL               RR             */
+    EXTI->RTSR1 = EXTI_RTSR1_RT7 | EXTI_RTSR1_RT6 | EXTI_RTSR1_RT1 | EXTI_RTSR1_RT0;
+    
+    EXTI->EXTICR[0] = (0x1 << EXTI_EXTICR1_EXTI0_Pos) | (0x1 << EXTI_EXTICR1_EXTI1_Pos);
+    EXTI->EXTICR[1] = (0x0 << EXTI_EXTICR2_EXTI6_Pos) | (0x0 << EXTI_EXTICR2_EXTI7_Pos);
 
     dataInit(&WS_wheels.fl);
     dataInit(&WS_wheels.fr);
 }
 
-uint32_t get_tick() {
-    /* return the tick of the timer */
-    return 0;
+inline uint32_t get_tick() {
+    return TIM2->CNT;
 }
 
-uint32_t get_d_ticks(WS_data_t* data) {
+inline uint32_t get_d_ticks(WS_data_t* data) {
     return get_tick() - data->last_tick;
 }
 
@@ -45,8 +74,7 @@ void dataInit(WS_data_t* data) {
 }
 
 void update(WS_data_t* data) {
-    float d_ticks = get_d_ticks(data);
-    float dt = d_ticks * PERIOD;
+    float dt = get_d_ticks(data) * PERIOD;
     data->last_dtime = dt;
     data->last_tick = get_tick();
 

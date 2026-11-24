@@ -16,7 +16,7 @@ extern struct _ws_data_struct {
     WS_data_t fr;
 } WS_wheels;
 
-void WS_Init(uint32_t ticks_of_period);
+void WS_Init();
 float WS_GetVelocity(WS_data_t* data);
 
 #endif

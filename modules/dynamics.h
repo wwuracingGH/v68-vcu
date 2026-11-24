@@ -28,7 +28,6 @@ typedef struct {
     float max_power;
 
     float torque_pid_kp;
-    float torque_pid_kd;
     float torque_pid_ki;
 
     /* map from rpm / (6500 / 32) -> efficency */

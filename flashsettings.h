@@ -36,7 +36,6 @@
 
 #define DEFAULT_SLIP_PID_KP     1.0f        /* idk */
 #define DEFAULT_SLIP_PID_KI     1.0f        /* idk */
-#define DEFAULT_SLIP_PID_KD     1.0f        /* idk */
 
 #define DEFAULT_CM200_EFFICIENCY { 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f, 0.94f,}
 #define DEFAULT_SLCTRL_ENABLED  1
