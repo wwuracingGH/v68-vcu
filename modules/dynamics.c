@@ -5,6 +5,8 @@ VehicleDynamicState_t lastState;
 ControlReq_t lastCTRL;
 uint32_t lastTime = 0;
 
+#define ACCEL_CONFIDENCE 0.8f
+
 void VD_Init() {
     lastState.a_x = 0.0;
     lastState.a_y = 0.0;
@@ -37,6 +39,11 @@ void VD_wheelspeedUpdate(uint32_t newTime) {
     /* update model to the current time before editing anything */
     VD_updateModel(newTime, &lastCTRL);
 
+    float velocity = WS_GetEstimatorVelocity();
+    float confidence = WS_GetEstimatorConfidence();
+
+    (void)velocity;
+    (void)confidence;
     /* update wheelspeed values */
 }
 

@@ -10,25 +10,26 @@ const float DECAY = 10000.0f;
 #define PI 3.14159265359f
 #define RC 0.005f
 #define MAX_TIM (0x80000000)
+#define MIN_CONFIDENCE_V 3.0f
 
-struct _ws_data_struct WS_wheels;
+WS_data_t WS_wheels[4];
 
 void dataInit(WS_data_t* data);
 void update(WS_data_t* data);
 
 void tim2_handler(void) {
-    WS_wheels.fl.last_tick = __QSUB(WS_wheels.fl.last_tick, MAX_TIM); /* saturating subtract */
-    WS_wheels.fr.last_tick = __QSUB(WS_wheels.fr.last_tick, MAX_TIM); /* saturating subtract */
+    WS_wheels[WS_FRONT_LEFT].last_tick = __QSUB(WS_wheels[WS_FRONT_LEFT].last_tick, MAX_TIM); /* saturating subtract */
+    WS_wheels[WS_FRONT_RIGHT].last_tick = __QSUB(WS_wheels[WS_FRONT_RIGHT].last_tick, MAX_TIM); /* saturating subtract */
     TIM2->SR &= ~TIM_SR_UIF;
 }
 
 void exti7_handler(void) {
-    update(&WS_wheels.fl);
+    update(&WS_wheels[WS_FRONT_LEFT]);
     EXTI->RPR1 |= EXTI_RPR1_RPIF7;
 }
 
 void exti6_handler(void) {
-    update(&WS_wheels.fr);
+    update(&WS_wheels[WS_FRONT_RIGHT]);
     EXTI->RPR1 |= EXTI_RPR1_RPIF6;
 }
 
@@ -54,8 +55,10 @@ void WS_Init() {
     EXTI->EXTICR[0] = (0x1 << EXTI_EXTICR1_EXTI0_Pos) | (0x1 << EXTI_EXTICR1_EXTI1_Pos);
     EXTI->EXTICR[1] = (0x0 << EXTI_EXTICR2_EXTI6_Pos) | (0x0 << EXTI_EXTICR2_EXTI7_Pos);
 
-    dataInit(&WS_wheels.fl);
-    dataInit(&WS_wheels.fr);
+    dataInit(&WS_wheels[WS_FRONT_LEFT]);
+    dataInit(&WS_wheels[WS_FRONT_RIGHT]);
+    dataInit(&WS_wheels[WS_REAR_LEFT]);
+    dataInit(&WS_wheels[WS_REAR_RIGHT]);
 }
 
 inline uint32_t get_tick() {
@@ -87,11 +90,38 @@ void update(WS_data_t* data) {
 float max(float f1, float f2) { return (f1 > f2) ? f1 : f2; }
 float min(float f1, float f2) { return (f1 < f2) ? f1 : f2; }
 
-float WS_GetVelocity(WS_data_t* data) {
+float WS_GetVelocity(WheelID id) {
+    WS_data_t* data = &WS_wheels[id];
     float dt = get_d_ticks(data) * PERIOD;
 
     float f1 = data->last_velocity + data->d_velocity * dt;
     float f2 = data->last_velocity - DECAY * (OFFSET * dt - data->last_dtime);
 
     return max(min(f1, f2), 0);
+}
+
+int16_t canWheelspeeds[4];
+
+int16_t* WS_GetCANMSG() {
+    canWheelspeeds[WS_FRONT_LEFT]  = (int16_t)(WS_GetVelocity(WS_FRONT_LEFT)  * 512.0);
+    canWheelspeeds[WS_FRONT_RIGHT] = (int16_t)(WS_GetVelocity(WS_FRONT_RIGHT) * 512.0);
+    canWheelspeeds[WS_REAR_LEFT]   = (int16_t)(WS_GetVelocity(WS_REAR_LEFT)   * 512.0);
+    canWheelspeeds[WS_REAR_RIGHT]  = (int16_t)(WS_GetVelocity(WS_REAR_RIGHT)  * 512.0);
+
+    return canWheelspeeds;
+}
+
+float last_est_velocity;
+
+float WS_GetEstimatorVelocity() {
+    last_est_velocity = (WS_GetVelocity(WS_FRONT_LEFT) + WS_GetVelocity(WS_FRONT_RIGHT)) / 2.0;
+    return last_est_velocity;
+}
+
+float WS_GetEstimatorConfidence() {
+    float avg_velocity = last_est_velocity;
+    float avg_dv = (WS_wheels[WS_FRONT_LEFT].d_velocity + WS_wheels[WS_FRONT_RIGHT].d_velocity) / 2.0f;
+    if (avg_dv < 0) avg_dv = -avg_dv;
+
+    return min(5.0 / (avg_dv + 1.0), 1.0) * min(avg_velocity / MIN_CONFIDENCE_V, 1);
 }

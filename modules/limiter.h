@@ -24,4 +24,7 @@ int16_t LIMIT_getLastSRTorqueLimit();
 int16_t LIMIT_getLastKWTorqueLimit();
 int16_t LIMIT_getLastRegenTorqueLimit();
 
+/* should be called before torque request is gotten */
+void LIMIT_updateSlipController();
+
 #endif

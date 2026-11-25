@@ -10,6 +10,8 @@ int16_t LIMIT_getLastSRTorqueLimit()    { return last_sl_limit; }
 int16_t LIMIT_getLastKWTorqueLimit()    { return last_kw_limit; }
 int16_t LIMIT_getLastRegenTorqueLimit() { return last_bms_regenlimit; }
 
+float slip_torque_estimator = 0;
+
 /* TODO: make these global parameters */
 float cm200efficiencyatspeed(VehicleDynamicParams_t* params, float speed) {
     float speed_val = (speed / (params->max_speed)) * EFFICIENCY_LUT_LEN; 
@@ -36,10 +38,6 @@ float saturate_regen_cutoff_speed(VehicleDynamicParams_t* params, float speed) {
     return (speed - params->regen_speed_ramp_start) / (params->regen_speed_ramp_end - params->regen_speed_ramp_start);
 }
 
-float get_sliptorque() {
-    return 2200.0f;
-}
-
 int16_t LIMIT_maxTorque(VehicleDynamicParams_t* params, uint16_t max_amps, float bus_voltage, float v_x, float a_y) {
     float max_power = bus_voltage * max_amps * cm200efficiencyatspeed(params, v_x);
     float motor_rps = v_x / params->tire_radius * params->drive_ratio;
@@ -49,7 +47,7 @@ int16_t LIMIT_maxTorque(VehicleDynamicParams_t* params, uint16_t max_amps, float
     int16_t max_80kw_torque = (int16_t)(cm200efficiencyatspeed(params, v_x) * (params->max_power / motor_rps));
 
     /* TODO: implement */
-    int16_t max_slip_ratio_torque = (int16_t)(get_accel_y_multiplier(params, a_y) * get_sliptorque());
+    int16_t max_slip_ratio_torque = (int16_t)(get_accel_y_multiplier(params, a_y) * slip_torque_estimator);
 
     int16_t max_torque = max_bms_torque; /* random big number */
 
@@ -75,4 +73,25 @@ int16_t LIMIT_regenTorque(VehicleDynamicParams_t* params, uint16_t max_amps, flo
     last_bms_regenlimit = min_torque;
 
     return min_torque;
+}
+
+void LIMIT_updateSlipController(VehicleDynamicParams_t* params, int16_t lastTorqueRequest) {
+    static float error_integrator = 0.0f;
+    const float dt = 0.001f; /* this should not be a constant float in here */
+    const float decay = 0.5f * dt; /* TODO: should not be a constant */
+
+    /* check if slip was the thing limiting torque last time or if it's close enough */
+    if ((last_sl_limit - lastTorqueRequest) > 5) {
+        /* this ideal torque should probably be pre-calculated */
+        float ideal_torque_estimator = params->drive_ratio * params->max_ax * params->vehicle_mass / params->drive_ratio;
+        
+        /* if slip wasn't the thing limiting torque, very very slowly fade the torque request to the initial target with an IIR filter */
+        slip_torque_estimator = slip_torque_estimator * decay + ideal_torque_estimator * (1.0 - decay);
+        error_integrator *= (1.0 - decay); /* error also decays, is this a good thing ? */
+    } else {
+        float error = 0.0f; /* TODO: get error */
+        error_integrator += error * dt;
+
+        slip_torque_estimator += (params->torque_pid_kp * error + params->torque_pid_ki * error_integrator) * dt;
+    }
 }
