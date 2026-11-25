@@ -118,18 +118,3 @@ int GPIO_buttonHeldTime(int button_id, uint32_t timestamp) {
 void GPIO_buttonConsume(int button_id) {
     buttonConsumedMask |= 1 << button_id;
 }
-
-/* pass in hex color value */
-void GPIO_setLED(uint32_t color) {
-    uint32_t alpha = (color >> 0) & 0xFF;
-
-    /* generate p15 fixed point colors */
-    uint32_t red   = ((color >> 24) & 0xFF) * alpha;
-    uint32_t green = ((color >> 16) & 0xFF) * alpha;
-    uint32_t blue  = ((color >>  8) & 0xFF) * alpha;
-
-    /* TODO: proper timer implementation */
-    TIM3->CCR2 = red;
-    TIM3->CCR3 = green;
-    TIM3->CCR4 = blue;
-}

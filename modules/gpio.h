@@ -57,7 +57,4 @@ int GPIO_buttonHeldTime(int button_id, uint32_t curr_timestamp);
 /* pretend the button has already been released */
 void GPIO_buttonConsume(int button_id);
 
-/* pass in hex color value RGBL where L is brightness */
-void GPIO_setLED(uint32_t color);
-
 #endif
