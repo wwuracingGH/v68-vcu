@@ -13,7 +13,7 @@ int16_t LIMIT_maxTorque(
 );
 
 int16_t LIMIT_regenTorque(
-    VehicleDynamicParams_t* params,    
+    VehicleDynamicParams_t* params,
     uint16_t bms_charge_amps,
     float bms_bus_voltage,
     float velocity
@@ -25,6 +25,6 @@ int16_t LIMIT_getLastKWTorqueLimit();
 int16_t LIMIT_getLastRegenTorqueLimit();
 
 /* should be called before torque request is gotten */
-void LIMIT_updateSlipController();
+void LIMIT_updateSlipController(VehicleDynamicParams_t* params, int16_t lastTorqueRequest);
 
 #endif
