@@ -38,8 +38,6 @@
 #include "vendor/FreeRTOS-Kernel/include/timers.h"
 #include "vendor/FreeRTOS-Kernel/include/semphr.h"
 
-//_RTOS_IMPLEMENTATION_
-
 #define INPUT_BUTTONID_RTD 0
 
 GPIO_TypeDef *  buttonPorts[] = { GPIOB };
@@ -74,7 +72,7 @@ const uint8_t   buttonNum     = 1;
                             MC_PFAULT_DC_BUS_VOLT_LOW   | \
                             MC_PFAULT_POST_DESATURATION | \
                             \
-							MC_RFAULT_GATE_DESATURATION | \
+                            MC_RFAULT_GATE_DESATURATION | \
                             MC_RFAULT_CAN_COMMAND_LOST  | \
                             MC_RFAULT_RESOLVER_DISCONNECTED \
                             )
@@ -90,23 +88,19 @@ typedef enum {
 } VcuState_t;
 
 struct {
-	// Moving to enum
-	// int state_idle;
-    // int state_mcinit;
-    //int state_rtd;
-    // int state_reset;
-    volatile VcuState_t state;	// new
+    volatile VcuState_t state;
+
     volatile uint16_t fault_counter;
     uint16_t plausibility_latch;
     uint16_t last_valid_tr;
     uint16_t last_torque_bounds;
-    
+
     ControlReq_t          last_ctrl_vec;
     VehicleDynamicState_t last_state_vec;
 
     ADC_Block_t         adc_dat;
     MC_HighSpeed        mc_hsmsg;
-    MC_FaultCodes       mc_faults; 
+    MC_FaultCodes       mc_faults;
     MC_InternalStates   mc_istates;
     MC_VoltageInfo      mc_vinfo;
     DL_WheelSpeed       dl_wheelspeed;
@@ -127,51 +121,47 @@ struct {
 
 void clock_init();
 
-int MC_faulted()  { return car_state.mc_faults.postErrors || car_state.mc_faults.runtimeErrors; }
-int MC_faultedR() { 
-    return( MC_RESET_BITMASK & car_state.mc_faults.postErrors ||
-        (MC_RESET_BITMASK >> 32) & car_state.mc_faults.runtimeErrors)
-
-    	&& !(~(MC_RESET_BITMASK) & car_state.mc_faults.postErrors ||
-        ~(MC_RESET_BITMASK >> 32) & car_state.mc_faults.runtimeErrors);
-		;
+static int MC_faulted() {
+    return car_state.mc_faults.postErrors || car_state.mc_faults.runtimeErrors;
 }
 
-//void Shared_processCAN();
-void Shared_control();
-void Shared_diagnostics();
-void Shared_CANWatchdog();
-void MC_watchdog();
+static int MC_faultedR() {
+    uint64_t resettable = (MC_RESET_BITMASK & car_state.mc_faults.postErrors ||
+            (MC_RESET_BITMASK >> 32) & car_state.mc_faults.runtimeErrors);
+    uint64_t other = (~(MC_RESET_BITMASK) & car_state.mc_faults.postErrors ||
+            ~(MC_RESET_BITMASK >> 32) & car_state.mc_faults.runtimeErrors);
+    return resettable && !other;
+}
 
-void RTD_input();
-void Idle_input();
-void Reset_input();
+static void Shared_control();
+static void Shared_diagnostics();
 
-void RTD_start();
-void Idle_start();
-void Reset_start();
-void MCInit_start();
+static void RTD_input();
+static void Idle_input();
+static void Reset_input();
 
-void MCInit_loop();
+static void RTD_start();
+static void Idle_start();
+static void Reset_start();
+static void MCInit_start();
 
-void Reset_MC();
+static void MCInit_loop();
 
-void BUZZERON()  { GPIOB->ODR |= GPIO_ODR_OD10;  }
-void BUZZEROFF() { GPIOB->ODR &= ~GPIO_ODR_OD10; }
+static void BUZZERON()  { GPIOB->ODR |= GPIO_ODR_OD10;  }
+static void BUZZEROFF() { GPIOB->ODR &= ~GPIO_ODR_OD10; }
 
 void msgCallback(uint8_t bus, uint32_t id, uint8_t dlc, uint32_t* data);
-void memcpy_32(uint32_t* dest, uint32_t* src, uint32_t byte_size);
-// void systick_handler() { /* RTOS_Update(); */ } FreeRTOS owns systick
+void memcpy_32(uint32_t* dest, const uint32_t* src, uint32_t byte_size);
 
 void switch_state(VcuState_t next_state) {
-    // needs a semaphore and mutex so no races
+    /* needs a semaphore and mutex so no races */
     xSemaphoreTake(state_mutex, portMAX_DELAY);
     car_state.state = next_state;
     switch (next_state) {
         case VCU_STATE_IDLE:
             Idle_start();
             break;
-        case VCU_STATE_MCINIT: 
+        case VCU_STATE_MCINIT:
             MCInit_start();
             break;
         case VCU_STATE_RTD:
@@ -184,8 +174,8 @@ void switch_state(VcuState_t next_state) {
     xSemaphoreGive(state_mutex);
 }
 
-uint32_t GetMS() { 
-    return pdTICKS_TO_MS(xTaskGetTickCount()); 
+uint32_t GetMS() {
+    return pdTICKS_TO_MS(xTaskGetTickCount());
 }
 
 const int control_period        =       1;
@@ -201,7 +191,7 @@ ADC_Mult_t apps_mult = { 0 };
 
 MC_Command          command_msg         = {   0, 0, 1, 0, 0, 0, 0, 0};
 MC_ParameterCommand reset_msg           = {  20, 1, 0, 0, 0};
-MC_ParameterCommand enable_fastm_msg    = { 227, 1, 0, 0xFFFE, 0}; /* TODO: verify */
+MC_ParameterCommand enable_fastm_msg    = { 227, 1, 0, 0xFFFE, 0};
 MC_ParameterCommand shutup_msg          = { 148, 1, 0, 0b0001110011100111, 0xFFFF};
 
 /* FreeRTOS */
@@ -212,72 +202,46 @@ MC_ParameterCommand shutup_msg          = { 148, 1, 0, 0b0001110011100111, 0xFFF
 #define INPUT_TASK_STACK        512
 
 #define CONTROL_TASK_PRIORITY  5 /* Highest PRIO */
-#define CM200CAN_TASK_PRIORITY 4 /* 2nd Highest PRIO */
+#define COMMAND_TASK_PRIORITY  4 /* 2nd Highest PRIO */
 #define CAN1_RX_TASK_PRIORITY  3
 #define CAN2_RX_TASK_PRIORITY  2
-#define SLOW_TASK_PRIORITY     1 
+#define SLOW_TASK_PRIORITY     1
 
-void CAN_rxTask(void* params);
-void Control_Task(void* params);
-void CM200_Communicate_Task(void* params);
-void Diagnostic_Task(void* params);
-void Input_Task(void* params);
+static void CAN_rxTask(void* params);
+static void Control_Task(void* params);
+static void Command_Task(void* params);
+static void Diagnostic_Task(void* params);
+static void Input_Task(void* params);
+static void MC_Watchdog_Task();
 TimerHandle_t buzzer_timer;
 static void buzzer_off_cb(TimerHandle_t t) { (void)t; BUZZEROFF(); }
 
-void Shared_processCAN(CAN_Message_t* msg);
+static void Shared_processCAN(CAN_Message_t* msg);
 
 int main(void) {
     clock_init();
-    GPIO_init(); 
+    GPIO_init();
     CTRL_ADCinit();
     logging_init();
 
-    xTaskCreate(CAN_rxTask, "can1_rx",
-                CAN_RX_TASK_STACK,
-                (void*)CAN1_BUS,
-                CAN1_RX_TASK_PRIORITY,
-                NULL);
-    xTaskCreate(CAN_rxTask, "can2_rx",
-                CAN_RX_TASK_STACK,
-                (void*)CAN2_BUS,
-                CAN2_RX_TASK_PRIORITY,
-                NULL);
+    xTaskCreate(CAN_rxTask, "can1_rx", CAN_RX_TASK_STACK, (void*)CAN1_BUS, CAN1_RX_TASK_PRIORITY, NULL);
+    xTaskCreate(CAN_rxTask, "can2_rx", CAN_RX_TASK_STACK, (void*)CAN2_BUS, CAN2_RX_TASK_PRIORITY, NULL);
 
-    xTaskCreate(Control_Task, "control_task",
-                CONTROL_TASK_STACK,
-                NULL,
-                CONTROL_TASK_PRIORITY,
-                NULL);
-    xTaskCreate(CM200_Communicate_Task, "control_task",
-                COMMAND_TASK_STACK,
-                NULL,
-                CM200CAN_TASK_PRIORITY,
-                NULL);
-    xTaskCreate(Input_Task, "input_task",
-    			INPUT_TASK_STACK,
-				NULL,
-				SLOW_TASK_PRIORITY,
-				NULL);
-    xTaskCreate(Diagnostic_Task, "diagnostic task",
-    			DIAGNOSTIC_TASK_STACK,
-				NULL,
-				SLOW_TASK_PRIORITY,
-				NULL
-                );
-    
+    xTaskCreate(Control_Task, "control_task", CONTROL_TASK_STACK, NULL, CONTROL_TASK_PRIORITY, NULL);
+    xTaskCreate(Command_Task, "command_task", COMMAND_TASK_STACK, NULL, COMMAND_TASK_PRIORITY, NULL);
+
+    xTaskCreate(Input_Task,           "input_task", INPUT_TASK_STACK,      NULL, SLOW_TASK_PRIORITY, NULL);
+    xTaskCreate(Diagnostic_Task, "diagnostic_task", DIAGNOSTIC_TASK_STACK, NULL, SLOW_TASK_PRIORITY, NULL);
+    xTaskCreate(MC_Watchdog_Task,  "watchdog_task", 50, NULL, SLOW_TASK_PRIORITY, NULL);
+
     state_mutex = xSemaphoreCreateMutex();
-    
     /*
      * Set a timer for 1500 to turn off buzzer using a callback
      */
-    buzzer_timer = xTimerCreate("buzzer",
-                                pdMS_TO_TICKS(1500),
-                                pdFALSE,
-                                NULL,
-                                buzzer_off_cb);
+    buzzer_timer = xTimerCreate("buzzer", pdMS_TO_TICKS(1500), pdFALSE, NULL, buzzer_off_cb);
 
-    //_enable_logging_all();
+
+    // _enable_logging_all();
     LOGLN("STARTING STM");
     car_state.plausibility_latch = 0;
     car_state.last_valid_tr = 0;
@@ -286,6 +250,7 @@ int main(void) {
     CAN_init();
     LOG("Hello World!\n");
     LOGLN("CLOCK CHECK: %d", SysTick->LOAD + 1);
+
     /* switch into idle state before doing anything */
     switch_state(VCU_STATE_IDLE);
 
@@ -314,7 +279,7 @@ int main(void) {
  * activate the task switch/preemption if true. At that point instead of returning
  * to the lower priority task it just runs CAN_rxTask instead.
  *******************************************************************************/
-void CAN_rxTask(void* params) {
+static void CAN_rxTask(void* params) {
     CAN_Bus_t bus = (CAN_Bus_t)(uint32_t)params;
     CAN_Message_t msg;
 
@@ -333,7 +298,7 @@ void CAN_rxTask(void* params) {
  * MC_sendStop
  * MCInit_loop
  *******************************************************************************/
-void Control_Task(void* params) {
+static void Control_Task(void* params) {
 	(void)params;
     TickType_t last_wake = xTaskGetTickCount();
     for (;;) {
@@ -343,19 +308,28 @@ void Control_Task(void* params) {
 }
 
 /* cm200 communication is a seperate task for a reason */
-void CM200_Communicate_Task(void* params) {
+static void Command_Task(void* params) {
 	(void)params;
     TickType_t last_wake = xTaskGetTickCount();
     for (;;) {
         if (car_state.state == VCU_STATE_RTD) {
             CAN_sendmessage(CTRL_CAN, MC_CANID_COMMAND, 8, (uint8_t*)&command_msg);
-        } else {
+        } else if (car_state.state != VCU_STATE_MCINIT) {
             int ltr = command_msg.torqueCommand;
             command_msg.torqueCommand = 0;
             CAN_sendmessage(CTRL_CAN, MC_CANID_COMMAND, 8, (uint8_t*)&command_msg);
             command_msg.torqueCommand = ltr;
+        } else {
+            MCInit_loop();
         }
         vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(mc_command_period));
+    }
+}
+
+static void MC_Watchdog_Task() {
+    if (!MC_WATCHDOG_ENABLED) return;
+    if (MC_faulted()) {
+        switch_state(VCU_STATE_IDLE);
     }
 }
 
@@ -364,7 +338,7 @@ void CM200_Communicate_Task(void* params) {
  * 
  * Maybe work?
  *******************************************************************************/
-void Diagnostic_Task(void* params) {
+static void Diagnostic_Task(void* params) {
 	(void)params;
     TickType_t last_wake = xTaskGetTickCount();
     for (;;) {
@@ -384,19 +358,19 @@ void Diagnostic_Task(void* params) {
  * Reset_input();
  * 
  *******************************************************************************/
-void Input_Task(void* params) {
+static void Input_Task(void* params) {
 	(void)params;
     TickType_t last_wake = xTaskGetTickCount();
     for (;;) {
         switch (car_state.state) {
-            case VCU_STATE_IDLE:  
-                Idle_input(); 
+            case VCU_STATE_IDLE:
+                Idle_input();
                 break;
-            case VCU_STATE_RTD:   
-                RTD_input();  
+            case VCU_STATE_RTD:
+                RTD_input();
                 break;
-            case VCU_STATE_RESET: 
-                Reset_input(); 
+            case VCU_STATE_RESET:
+                Reset_input();
                 break;
             default: break;
         }
@@ -405,13 +379,13 @@ void Input_Task(void* params) {
 }
 
 /* ======= RTD Specific functionality ======= */
-void RTD_start() {
+static void RTD_start() {
     BUZZERON();
     command_msg.inverterEnable = 1;
     xTimerStart(buzzer_timer, 0); /* Start the Buzzer timer*/
 }
 
-void RTD_input() {
+static void RTD_input() {
     GPIO_Update(GetMS());
     if (GPIO_buttonReleased(INPUT_BUTTONID_RTD)) {
         GPIO_buttonConsume(INPUT_BUTTONID_RTD); /* action has been processed */
@@ -422,44 +396,44 @@ void RTD_input() {
 }
 
 /* ======= Idle Specific Functionality ======== */
-void Idle_start() {
+static void Idle_start() {
     command_msg.inverterEnable = 0;
 }
 
 /*TODO*/
-void Idle_input() {
+static void Idle_input() {
 	GPIO_Update(GetMS());
 
     /* check that it is in a state of hard braking before getting into rtd */
     int braking = IGNORE_BRAKES || (car_state.last_ctrl_vec.brake_pressure > car_params->params.hard_braking);
     if (braking && GPIO_buttonReleased(INPUT_BUTTONID_RTD) && car_state.last_valid_tr < 10) {
         GPIO_buttonConsume(INPUT_BUTTONID_RTD);
-        if(MC_faultedR()){
+        if (MC_faultedR()) {
             switch_state(VCU_STATE_RESET);
-        } else{
+        } else {
             switch_state(VCU_STATE_MCINIT);
         }
     }
 }
 
 /* ====== Shared functionality ====== */
-void Shared_diagnostics() {
+static void Shared_diagnostics() {
     CAN_sendmessage(DATA_CAN, VCU_CANID_APPS_RAW, 8, (uint8_t*)&car_state.adc_dat);
     CAN_sendmessage(DATA_CAN, VCU_CANID_BPS_RAW, 4, (uint8_t*)&car_state.adc_dat.FBPS);
     CAN_sendmessage(DATA_CAN, VCU_CANID_CTRL_VEC, 8, (uint8_t*)&car_state.last_ctrl_vec);
-    // TODO: get state
+
     uint8_t state = car_state.state;
     VCU_VCUState st = { state, car_state.fault_counter, car_state.plausibility_latch, car_state.last_valid_tr };
 
     CAN_sendmessage(DATA_CAN, VCU_CANID_VCU_STATE, 4, (uint8_t*)&st);
 }
 
-void Shared_processCAN(CAN_Message_t* msg) {
+static void Shared_processCAN(CAN_Message_t* msg) {
     uint32_t tick = GetMS();
-    if (msg->bus_id == CAN1_BUS) 
-        car_state.last_can_timestamp1 = tick; 
+    if (msg->bus_id == CAN1_BUS)
+        car_state.last_can_timestamp1 = tick;
     if (msg->bus_id == CAN2_BUS)
-        car_state.last_can_timestamp2 = tick; 
+        car_state.last_can_timestamp2 = tick;
 
     switch (msg->id) {
         case MC_CANID_HIGHSPEEDMESSAGE:
@@ -502,7 +476,7 @@ void Shared_processCAN(CAN_Message_t* msg) {
     }
 }
 
-void Shared_control() {
+static void Shared_control() {
     const int fault_ignore     = 20;
     const int fault_cutoff     = 80;
     const int fault_multiplier = 65536 / (fault_cutoff - fault_ignore);
@@ -526,12 +500,14 @@ void Shared_control() {
         car_state.last_valid_tr = tr.torque;
         command_msg.torqueCommand = tr.torque;
     } else {
-    	if (car_state.fault_counter < 100)
+    	if (car_state.fault_counter < 100) {
     		car_state.fault_counter += control_period;
+        }
+
         if (car_state.fault_counter < fault_ignore) {
             command_msg.torqueCommand = car_state.last_valid_tr;
-        } else if (car_state.fault_counter < fault_cutoff) {         
-            int j = fault_multiplier * (fault_cutoff - car_state.fault_counter); /* p15 fixed point (1092 ~= 2^16 / 60) */
+        } else if (car_state.fault_counter < fault_cutoff) {
+            int j = fault_multiplier * (fault_cutoff - car_state.fault_counter); /* 1092 ~= 2^16 / 60 */
             command_msg.torqueCommand = (j * car_state.last_valid_tr) >> 16UL;
         } else {
             command_msg.torqueCommand = 0;
@@ -545,37 +521,31 @@ void Shared_control() {
 }
 
 /* ======= MC Init Specific Functionality ======= */
-void MCInit_start() {
+static void MCInit_start() {
     // disable lockout
     command_msg.inverterEnable = 1;
 }
 
-void MCInit_loop() {
+static void MCInit_loop() {
     /* Assuming this is fault protection */
     if (car_state.mc_istates.vsmState == 7) {
         switch_state(VCU_STATE_IDLE);
     } else if (car_state.mc_istates.vsmState == 6 || !MC_ON_BABYSITTING) {
         switch_state(VCU_STATE_RTD);
-    } else if (car_state.mc_istates.vsmState == 4){ /* failed to to turn on try again*/
-    	MCInit_start();
+    } else if (car_state.mc_istates.vsmState == 4) { /* failed to to turn on try again*/
+        MCInit_start();
     }
 }
 
-void MC_watchdog() {
-    if(!MC_WATCHDOG_ENABLED) return;
-    if (MC_faulted()) {
-        switch_state(VCU_STATE_IDLE);
-    }
-}
 
 
 /* ======= Reset Specific Functionality ======== */
-void Reset_start() {
+static void Reset_start() {
     CAN_sendmessage(CTRL_CAN, MC_CANID_PARAMCOM, 8, (uint8_t*)&reset_msg);
 }
 
-void Reset_input() {
-    // TODO: proper timestamps
+static void Reset_input() {
+    /*TODO: proper timestamps*/
 	GPIO_Update(GetMS());
 
     if (!MC_RESET_LOOP) {
@@ -628,11 +598,11 @@ void clock_init() { /* turns up the speed to 250mhz */
 
     /* Enables PLL1 and locks values */
     RCC->CR |= RCC_CR_PLL1ON;
-    while (!(RCC->CR & RCC_CR_PLL1RDY));
+    while (!(RCC->CR & RCC_CR_PLL1RDY)) {}
 
     /* sets system clock source as PLL1 */
     RCC->CFGR1 |= 0b11 << RCC_CFGR1_SW_Pos;
-    while (!(RCC->CFGR1 & (0b11 << RCC_CFGR1_SWS_Pos)));
+    while (!(RCC->CFGR1 & (0b11 << RCC_CFGR1_SWS_Pos))) {}
 
     /* sets CAN source as PLL1 Q ); */
     RCC->CCIPR5 |= 0b01 << RCC_CCIPR5_FDCANSEL_Pos;
@@ -642,5 +612,6 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
     (void)xTask;
     (void)pcTaskName;
     __asm volatile("cpsid i");
-    for (;;);
+    for (;;) {}
 }
+

@@ -7,7 +7,7 @@
 #ifndef _MODULES_DYNAMICS_H_
 #define _MODULES_DYNAMICS_H_
 
-#include "control.h"
+#include "modules/control.h"
 
 #define EFFICIENCY_LUT_LEN 32
 
@@ -31,9 +31,9 @@ typedef struct {
     float torque_pid_ki;
 
     /* map from rpm / (6500 / 32) -> efficency */
-    float cm200efficiency[EFFICIENCY_LUT_LEN]; 
-    
-    uint8_t slip_ratio_limit_enabled; 
+    float cm200efficiency[EFFICIENCY_LUT_LEN];
+
+    uint8_t slip_ratio_limit_enabled;
     uint8_t kw_limit_enabled;
 } VehicleDynamicParams_t;
 
@@ -47,7 +47,7 @@ typedef struct {
 
 void VD_Init();
 
-VehicleDynamicState_t* VD_updateModel(uint32_t newTime, ControlReq_t* newControl);
+VehicleDynamicState_t* VD_updateModel(uint32_t newTime, const ControlReq_t* newControl);
 
 void VD_accelerometerUpdate(uint32_t newTime, float ax, float ay, float az);
 void VD_wheelspeedUpdate(uint32_t newTime);

@@ -1,8 +1,8 @@
 #ifndef STM32H533xx
 #define STM32H533xx
 #endif
-#include "logging.h"
-#include "stm32h5xx.h"
+#include "modules/logging.h"
+#include "vendor/CMSIS/Device/ST/STM32H5/Include/stm32h5xx.h"
 
 #define UPDATE_MS 4
 #define PRINT_BUFFER_LEN 4096 /* 4kb buffer should be enough? */
@@ -66,7 +66,7 @@ void logging_init() {
 void _flush() {
     if (!(USART1->ISR & USART_ISR_TC)) return;
 
-    uint8_t* source = (uint8_t*)&_print_buffer.buffer[_print_buffer.put_head];
+    const uint8_t* source = (uint8_t*)&_print_buffer.buffer[_print_buffer.put_head];
     int length = _print_buffer.append_head - _print_buffer.put_head;
     if (length < 0)
         length = PRINT_BUFFER_LEN - _print_buffer.put_head; /* make it just one dma transfer */

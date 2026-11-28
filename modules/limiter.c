@@ -1,4 +1,4 @@
-#include "limiter.h"
+#include "modules/limiter.h"
 
 int16_t last_kw_limit = 0;
 int16_t last_sl_limit = 0;
@@ -13,11 +13,11 @@ int16_t LIMIT_getLastRegenTorqueLimit() { return last_bms_regenlimit; }
 float slip_torque_estimator = 0;
 
 /* TODO: make these global parameters */
-float cm200efficiencyatspeed(VehicleDynamicParams_t* params, float speed) {
-    float speed_val = (speed / (params->max_speed)) * EFFICIENCY_LUT_LEN; 
+float cm200efficiencyatspeed(const VehicleDynamicParams_t* params, float speed) {
+    float speed_val = (speed / (params->max_speed)) * EFFICIENCY_LUT_LEN;
     int max_idx = (int)speed_val;
     float lerpval = speed_val - max_idx;
-    
+
     float min_val = 1.0;
     float max_val = params->cm200efficiency[max_idx];
     if (max_idx != 0) {
@@ -27,21 +27,21 @@ float cm200efficiencyatspeed(VehicleDynamicParams_t* params, float speed) {
     return lerpval * max_val + (1.0 - lerpval) * min_val;
 }
 
-float get_accel_y_multiplier(VehicleDynamicParams_t* params, float accel_y) {
+float get_accel_y_multiplier(const VehicleDynamicParams_t* params, float accel_y) {
     return __builtin_sqrtf(1.0 - accel_y / params->max_ay);
 }
 
-float saturate_regen_cutoff_speed(VehicleDynamicParams_t* params, float speed) {
+float saturate_regen_cutoff_speed(const VehicleDynamicParams_t* params, float speed) {
     if (speed < params->regen_speed_ramp_start) return 0.0;
     if (speed > params->regen_speed_ramp_end) return 1.0;
 
     return (speed - params->regen_speed_ramp_start) / (params->regen_speed_ramp_end - params->regen_speed_ramp_start);
 }
 
-int16_t LIMIT_maxTorque(VehicleDynamicParams_t* params, uint16_t max_amps, float bus_voltage, float v_x, float a_y) {
+int16_t LIMIT_maxTorque(const VehicleDynamicParams_t* params, uint16_t max_amps, float bus_voltage, float v_x, float a_y) {
     float max_power = bus_voltage * max_amps * cm200efficiencyatspeed(params, v_x);
     float motor_rps = v_x / params->tire_radius * params->drive_ratio;
-    
+
     int16_t max_bms_torque = (int)((max_power / motor_rps) * 10.0f);
 
     int16_t max_80kw_torque = (int16_t)(cm200efficiencyatspeed(params, v_x) * (params->max_power / motor_rps));
@@ -64,7 +64,7 @@ int16_t LIMIT_maxTorque(VehicleDynamicParams_t* params, uint16_t max_amps, float
     return max_torque;
 }
 
-int16_t LIMIT_regenTorque(VehicleDynamicParams_t* params, uint16_t max_amps, float bus_voltage, float v_x) {
+int16_t LIMIT_regenTorque(const VehicleDynamicParams_t* params, uint16_t max_amps, float bus_voltage, float v_x) {
     float max_power = bus_voltage * max_amps * cm200efficiencyatspeed(params, v_x);
     float motor_rps = v_x / params->tire_radius * params->drive_ratio;
 
@@ -75,9 +75,9 @@ int16_t LIMIT_regenTorque(VehicleDynamicParams_t* params, uint16_t max_amps, flo
     return min_torque;
 }
 
-void LIMIT_updateSlipController(VehicleDynamicParams_t* params, int16_t lastTorqueRequest) {
+void LIMIT_updateSlipController(const VehicleDynamicParams_t* params, int16_t lastTorqueRequest) {
     static float error_integrator = 0.0f;
-    const float dt = 0.001f; /* this should not be a constant float in here */
+    const float dt = 0.001f; /* this should not be a constant float in here i think */
     const float decay = 0.5f * dt; /* TODO: should not be a constant */
 
     /* check if slip was the thing limiting torque last time or if it's close enough */
@@ -92,6 +92,9 @@ void LIMIT_updateSlipController(VehicleDynamicParams_t* params, int16_t lastTorq
         float error = 0.0f; /* TODO: get error */
         error_integrator += error * dt;
 
+        /* The III controller (integrator, integrator's integrator) 
+         * second order control output (torque) for a first order error measurement (speed) 
+         */
         slip_torque_estimator += (params->torque_pid_kp * error + params->torque_pid_ki * error_integrator) * dt;
     }
 }

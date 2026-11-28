@@ -10,13 +10,13 @@
 #ifndef STM32H533xx
 #define STM32H533xx
 #endif
-#include "can.h"
-#include "stm32h5xx.h"
+#include <stdbool.h>
+#include "modules/can.h"
+#include "vendor/CMSIS/Device/ST/STM32H5/Include/stm32h5xx.h"
 #include "vendor/FreeRTOS-Kernel/include/queue.h"
 #include "vendor/FreeRTOS-Kernel/include/semphr.h"
-#include <stdbool.h>
-#define CAN_RX_BUFFER_LEN 256 // X
-#define CAN_TX_LOCK_WAIT pdMS_TO_TICKS(2) //?
+#define CAN_RX_BUFFER_LEN 256  // X
+#define CAN_TX_LOCK_WAIT pdMS_TO_TICKS(2)  // ?
 
 /* FreeRTOS */
 static QueueHandle_t rx_queue[CAN_NUM_BUSES];   /* Two Queue Handles */
@@ -116,7 +116,7 @@ void CAN_init() {
     FDCAN2->TXBC &= ~(1 << FDCAN_TXBC_TFQM_Pos); /* clear queue bit */
 
     /* setup interrupts */
-    FDCAN1->IE |= FDCAN_IE_RF0NE | FDCAN_IE_RF1NE; 
+    FDCAN1->IE |= FDCAN_IE_RF0NE | FDCAN_IE_RF1NE;
     FDCAN2->IE |= FDCAN_IE_RF0NE | FDCAN_IE_RF1NE;
     FDCAN1->ILS |= FDCAN_ILS_RXFIFO1;
     FDCAN2->ILS |= FDCAN_ILS_RXFIFO1;
@@ -134,7 +134,7 @@ void CAN_init() {
     NVIC_EnableIRQ(FDCAN1_IT1_IRQn);
     NVIC_EnableIRQ(FDCAN2_IT0_IRQn);
     NVIC_EnableIRQ(FDCAN2_IT1_IRQn);
-    
+
     /* Enable Operations*/
     FDCAN1->CCCR |= FDCAN_CCCR_FDOE;
     FDCAN2->CCCR |= FDCAN_CCCR_FDOE;
@@ -169,11 +169,11 @@ void CAN_reset() {
     CAN_init();
 }
 
-void memcpy_32(uint32_t* dest, uint32_t* src, uint32_t l){
+void memcpy_32(uint32_t* dest, const uint32_t* src, uint32_t l) {
     uint32_t * d = dest;
-    uint32_t * s = src;
-    
-    while (l > 0){
+    const uint32_t * s = src;
+
+    while (l > 0) {
         *d = *s;
         d++;
         s++;
@@ -181,16 +181,16 @@ void memcpy_32(uint32_t* dest, uint32_t* src, uint32_t l){
     }
 }
 
-uint32_t _get_id(FDCAN_Rx_FIFO_Element_Typedef* msg) {
+uint32_t _get_id(const FDCAN_Rx_FIFO_Element_Typedef* msg) {
     return (msg->H0 & FDCAN_RXBH0_XTD_Msk) ? (msg->H0 & FDCAN_RXBH0_EXTID_Msk) :
             (msg->H0 & FDCAN_RXBH0_STDID_Msk) >> FDCAN_RXBH0_STDID_Pos;
 }
 
-uint8_t _get_dlc(FDCAN_Rx_FIFO_Element_Typedef* msg) {
+uint8_t _get_dlc(const FDCAN_Rx_FIFO_Element_Typedef* msg) {
     return (msg->H1 & FDCAN_RXBH1_DLC_Msk) >> FDCAN_RXBH1_DLC_Pos;
 }
 
-uint32_t* _get_data(FDCAN_Rx_FIFO_Element_Typedef* msg) {
+const uint32_t* _get_data(const FDCAN_Rx_FIFO_Element_Typedef* msg) {
     return msg->data;
 }
 
@@ -202,8 +202,9 @@ int CAN_rxCount() {
 
 int CAN_bytesFromDLC(int dlc) {
     const int bytes[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 48, 64 };
-    return bytes[dlc]; 
+    return bytes[dlc];
 }
+
 int CAN_DLCFromBytes(int bytes) {
     if (bytes <= 8) return bytes;
     if (bytes <= 24) return (bytes + 27) >> 2;
@@ -229,7 +230,7 @@ void CAN_sendmessage(FDCAN_GlobalTypeDef* FDCAN, uint16_t id, uint8_t length, ui
      * which equates to mutex acquired or failed to acquire mutex
      */
     if (xSemaphoreTake(lock, CAN_TX_LOCK_WAIT) != pdTRUE) return;
-    
+
     /*
      * FDCAN->TXFQS & FDCAN_TXFQS_TFQF_Msk:
      * Tx FIFO/QUEUE Status Reg the mask looks at only the FIFO/QUEUE FULL
@@ -262,7 +263,7 @@ void CAN_sendmessage(FDCAN_GlobalTypeDef* FDCAN, uint16_t id, uint8_t length, ui
     xSemaphoreGive(lock);   /* Release mutex */
 }
 
-static void CAN_receiveMessage(uint32_t id, uint16_t bus,uint16_t len, uint32_t* data, BaseType_t* xHigherPriorityTaskWoken) {
+static void CAN_receiveMessage(uint32_t id, uint16_t bus, uint16_t len, const uint32_t* data, BaseType_t* xHigherPriorityTaskWoken) {
     /* Create a CAN message */
     CAN_Message_t msg = {id, len, bus, {data[0], data[1]}};
 
@@ -294,18 +295,17 @@ static void CAN_FIFO_Process(FDCAN_GlobalTypeDef* FDCAN, CAN_Bus_t bus, int fifo
      * Bits [9:8] index pointer of oldest frame to read
      * Bits [16-17] index to next frame to fill/ write
      */
-    volatile uint32_t* status = fifo ? &FDCAN->RXF1S : &FDCAN->RXF0S;
+    volatile const uint32_t* status = fifo ? &FDCAN->RXF1S : &FDCAN->RXF0S;
     volatile uint32_t* ack    = fifo ? &FDCAN->RXF1A : &FDCAN->RXF0A;
     FDCAN_Rx_FIFO_Element_Typedef* elements = fifo ? fd_ram->rx_fifo1 : fd_ram->rx_fifo0;
 
     /* RXF0S and RXF1S share a layout, so the FIFO0 masks work for both */
     while (*status & FDCAN_RXF0S_F0FL_Msk) {
         uint32_t idx = (*status & FDCAN_RXF0S_F0GI_Msk) >> FDCAN_RXF0S_F0GI_Pos;
-        FDCAN_Rx_FIFO_Element_Typedef* msg = elements + idx;
+        const FDCAN_Rx_FIFO_Element_Typedef* msg = elements + idx;
         CAN_receiveMessage(_get_id(msg), bus, CAN_bytesFromDLC(_get_dlc(msg)), _get_data(msg), xHigherPriorityTaskWoken);
         *ack = idx;
     }
-
 }
 
 /*******************************************************************************
@@ -339,7 +339,7 @@ void fdcan2_it0_handler() {
 void fdcan2_it1_handler() {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     FDCAN2->IR = FDCAN_IR_RF1N;    /* Clear new message */
-    CAN_FIFO_Process(FDCAN2, CAN2_BUS,1, &xHigherPriorityTaskWoken);
+    CAN_FIFO_Process(FDCAN2, CAN2_BUS, 1, &xHigherPriorityTaskWoken);
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 

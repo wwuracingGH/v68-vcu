@@ -4,8 +4,7 @@
 
 #include <stdint.h>
 
-typedef struct
-{
+typedef struct {
     float last_velocity;
     float d_velocity;
     float last_dtime;

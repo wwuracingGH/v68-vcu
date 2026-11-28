@@ -1,5 +1,5 @@
-#include "dynamics.h"
-#include "wheelspeed.h"
+#include "modules/dynamics.h"
+#include "modules/wheelspeed.h"
 
 VehicleDynamicState_t lastState;
 ControlReq_t lastCTRL;
@@ -16,7 +16,7 @@ void VD_Init() {
     lastTime = 0.0;
 }
 
-VehicleDynamicState_t* VD_updateModel(uint32_t newTime, ControlReq_t* newControl) {
+VehicleDynamicState_t* VD_updateModel(uint32_t newTime, const ControlReq_t* newControl) {
     /* update model values */
 
     lastCTRL = *newControl;

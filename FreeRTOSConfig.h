@@ -40,8 +40,8 @@
  * generic file, if one is available.
  ******************************************************************************/
 
-#ifndef FREERTOS_CONFIG_H
-#define FREERTOS_CONFIG_H
+#ifndef _FREERTOS_CONFIG_H_
+#define _FREERTOS_CONFIG_H_
 
 /******************************************************************************/
 /* Hardware description related definitions. **********************************/
@@ -227,7 +227,7 @@
  * task, so its priority is set like any other task.  See
  * https://www.freertos.org/RTOS-software-timer-service-daemon-task.html  Only
  * used if configUSE_TIMERS is set to 1. */
-#define configTIMER_TASK_PRIORITY       ( configMAX_PRIORITIES - 1 )
+#define configTIMER_TASK_PRIORITY       (configMAX_PRIORITIES - 1)
 
 /* configTIMER_TASK_STACK_DEPTH sets the size of the stack allocated to the
  * timer task (in words, not in bytes!).  The timer task is a standard FreeRTOS

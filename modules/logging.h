@@ -17,11 +17,7 @@ void logging_init();
 void _update_logging();
 
 #define LOGGING 1
-// TODO: more elegant logging solution
-//#define _enable_logging(state) RTOS_scheduleTask(state, _update_logging, 71)
-//#define _enable_logging_all() RTOS_scheduleTask(-1, _update_logging, 71)
 #if (LOGGING == 1)
-// TODO: freeRTOS timestamps
 #define LOG(msg, ...) printf(__FILE__ " line: %d [%d] ", __LINE__, /* RTOS_getMainTick() */ 0); \
                      printf(msg, ##__VA_ARGS__)
 #define LOGLN(msg, ...) LOG(msg, ##__VA_ARGS__); _putchar('\n')

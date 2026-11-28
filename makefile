@@ -92,11 +92,11 @@ cleanall:
 
 .PHONY: lint
 lint:
-	cpplint --linelength=100 main.c startup.c modules/*
+	cpplint --linelength=120 main.c startup.c modules/*
 
 .PHONY: check
 check:
-	cppcheck main.c --check-level=exhaustive --force --enable=all $(CPPFLAGS)
+	cppcheck main.c modules/* --check-level=exhaustive --force --enable=all --suppress=*:vendor/* --suppress=missingIncludeSystem $(CPPFLAGS)
 
 .PHONY: program
 program:

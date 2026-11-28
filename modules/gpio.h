@@ -32,7 +32,7 @@
 #ifndef STM32H533xx
 #define STM32H533xx
 #endif
-#include "stm32h5xx.h"
+#include "vendor/CMSIS/Device/ST/STM32H5/Include/stm32h5xx.h"
 
 extern GPIO_TypeDef *   buttonPorts[];
 extern uint8_t          buttonPins[];

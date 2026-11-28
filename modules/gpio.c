@@ -1,8 +1,8 @@
 #ifndef STM32H533xx
 #define STM32H533xx
 #endif
-#include "gpio.h"
-#include "stm32h5xx.h"
+#include "modules/gpio.h"
+#include "vendor/CMSIS/Device/ST/STM32H5/Include/stm32h5xx.h"
 
 enum Pin_Mode {
     MODE_INPUT   = 0,

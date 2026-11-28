@@ -1,7 +1,7 @@
 #ifndef _MODULES_FLASH_H_
 #define _MODULES_FLASH_H_
-#include "control.h"
-#include "dynamics.h"
+#include "modules/control.h"
+#include "modules/dynamics.h"
 
 typedef struct {
     uint32_t stored_len;

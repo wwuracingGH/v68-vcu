@@ -1,7 +1,7 @@
-#include "control.h"
+#include "modules/control.h"
 #include <stdint.h>
-#include "stm32h533xx.h"
-#include "logging.h"
+#include "vendor/CMSIS/Device/ST/STM32H5/Include/stm32h5xx.h"
+#include "modules/logging.h"
 
 uint16_t raw_vals[ROLLING_ADC_VALS];
 
@@ -9,7 +9,7 @@ void waitus(volatile uint32_t us) {
     for (volatile int i = us * 10; i > 0; i--);
 }
 
-int abs (int a) {
+int abs(int a) {
     if (a < 0) return -a;
     return a;
 }
@@ -118,7 +118,7 @@ ADC_Block_t CTRL_condense() {
 }
 
 int find_avg_4(int32_t * vals, int min, int max) {
-	if(max - min == 0) return vals[max];
+    if (max - min == 0) return vals[max];
     int avg = 0;
     for (int i = min; i <= max; i++)
         avg += vals[i];
@@ -156,21 +156,21 @@ void sort_dat_4(int32_t * vals) {
 }
 
 /* returns pedal position given the curve */
-int16_t apply_curve(uint16_t pedal_pos, int16_t* lut) {
+int16_t apply_curve(uint16_t pedal_pos, const int16_t* lut) {
     const int OFFSET_BITS = (sizeof(pedal_pos) * 8) - TORQUE_CURVE_BITS;
-    
+
     uint16_t low_bin = pedal_pos >> OFFSET_BITS;
     uint16_t offset = pedal_pos & ((uint16_t)-1 >> TORQUE_CURVE_BITS);
-    
+
     int low = lut[low_bin];
     int high = (low_bin != TORQUE_CURVE_LEN - 1) ? lut[low_bin + 1] : 65536;
-    
+
     int out = (((high - low) * offset) >> OFFSET_BITS) + low;
-    
+
     return (int16_t)out;
 }
 
-ADC_Mult_t CTRL_getADCMultiplers(volatile ADC_Bounds_t* bounds) {
+ADC_Mult_t CTRL_getADCMultiplers(const volatile ADC_Bounds_t* bounds) {
     ADC_Mult_t mult = {0};
     mult.APPS1_strt = bounds->APPS1_l;
     mult.APPS2_strt = bounds->APPS2_l;
@@ -195,7 +195,7 @@ ADC_Mult_t CTRL_getADCMultiplers(volatile ADC_Bounds_t* bounds) {
     return mult;
 }
 
-ControlReq_t CTRL_getCommand(ADC_Mult_t* mult, ControlParams_t* params, uint16_t bound) {
+ControlReq_t CTRL_getCommand(const ADC_Mult_t* mult, const ControlParams_t* params, uint16_t bound) {
     GPIOA->ODR &= ~(1 << 6);
     ADC_Block_t vals = CTRL_condense();
     GPIOA->ODR |= 1 << 6;
@@ -241,7 +241,7 @@ ControlReq_t CTRL_getCommand(ADC_Mult_t* mult, ControlParams_t* params, uint16_t
         }
     }
 
-    if(maxdex - mindex == 3) {
+    if (maxdex - mindex == 3) {
         if (apps[2] - apps[1] > APPS_MAX_DELTA) {
             if (abs(apps[0] - apps[1]) < APPS_MAX_DELTA && abs(apps[2] - apps[3]) < APPS_MAX_DELTA)
                 control_request.flags |= APPS_FAULT_DISAG;
@@ -255,7 +255,7 @@ ControlReq_t CTRL_getCommand(ADC_Mult_t* mult, ControlParams_t* params, uint16_t
     int avg = find_avg_4(apps, mindex, maxdex);
 
     while ((apps[maxdex] - apps[mindex]) > APPS_MAX_DELTA && (maxdex > mindex)) { /* 10% in */
-        if (apps[maxdex] + apps[mindex] > avg * 2) {
+        if ((apps[maxdex] + apps[mindex]) > avg * 2) {
             maxdex--;
         } else {
             mindex++;
@@ -278,11 +278,11 @@ ControlReq_t CTRL_getCommand(ADC_Mult_t* mult, ControlParams_t* params, uint16_t
 
     /* returns a value in [-10000, 10000]*/
     int16_t torquepercentage = apply_curve(avg, params->torque_curve);
-    
+
     /* needs to be max_torque (not variable) instead of bound (varies) */
     int multiplier = ((params->max_torque << 16)/10000) + 1;
     /* could be a bitshift ig - i'll leave it up to gcc O3 */
-    control_request.torque = (torquepercentage * multiplier) / 65536; 
+    control_request.torque = (torquepercentage * multiplier) / 65536;
     if (control_request.torque > bound) {
         control_request.torque = bound;
     }

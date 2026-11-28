@@ -104,7 +104,7 @@ void CTRL_ADCinit();
  * 
  * Takes in the bounds to get the multipliers from 
  */
-ADC_Mult_t CTRL_getADCMultiplers(volatile ADC_Bounds_t* bounds);
+ADC_Mult_t CTRL_getADCMultiplers(const volatile ADC_Bounds_t* bounds);
 
 /*
  * Only exposed for debugging, can be hidden if raw apps values aren't necessary
@@ -118,6 +118,6 @@ ADC_Block_t CTRL_condense();
  * total brake pressure in bar
  * steering angle (maybe)
  */
-ControlReq_t CTRL_getCommand(ADC_Mult_t* mult, ControlParams_t* params, uint16_t bound);
+ControlReq_t CTRL_getCommand(const ADC_Mult_t* mult, const ControlParams_t* params, uint16_t bound);
 
 #endif
